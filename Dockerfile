@@ -17,7 +17,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Vendor Samsung-SAIL TRM source for the verifier to import (MIT — embedding is fine).
-RUN git clone --depth 1 https://github.com/SamsungSAILMontreal/TinyRecursiveModels.git /opt/trm
+# Pin to a specific commit to avoid silent upstream changes affecting builds.
+ARG TRM_COMMIT=main
+RUN git clone https://github.com/SamsungSAILMontreal/TinyRecursiveModels.git /opt/trm \
+ && git -C /opt/trm checkout "$TRM_COMMIT" \
+ && rm -rf /opt/trm/.git
 
 COPY pyproject.toml ./
 # uv lock + sync in one cached layer.

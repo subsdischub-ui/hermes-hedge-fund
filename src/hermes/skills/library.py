@@ -4,13 +4,15 @@ Each Skill is a deterministic, parameterized function from OHLCV → SkillSignal
 The LLM picks the skill, the skill produces a structured signal, and the
 researcher/trader agents reason over the signal alongside news + sentiment.
 
-Skills are first-class memory: their realized PnL is tracked weekly (skill_stats
-table) so under-performers can be archived and the LLM can be asked to
-propose new ones (procedural memory).
+Skills are first-class memory: their realized PnL is tracked weekly
+(skill_stats table) so under-performers can be archived and the LLM can be
+asked to propose new ones. Archival is persisted across restarts via
+SkillStatRow — see `_reload_archival_from_db`.
 """
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from functools import lru_cache
 from typing import Callable, Literal
@@ -52,7 +54,6 @@ def _rsi(close: pd.Series, n: int = 14) -> pd.Series:
 
 
 def mean_reversion_atr(df: pd.DataFrame) -> SkillSignal:
-    """Buy when price closes below lower Bollinger + RSI < 30; symmetric short."""
     c = df["close"]
     ma = c.rolling(20).mean()
     sd = c.rolling(20).std()
@@ -61,8 +62,8 @@ def mean_reversion_atr(df: pd.DataFrame) -> SkillSignal:
     rsi = _rsi(c)
     atr = _atr(df).iloc[-1]
     px = float(c.iloc[-1])
-    stop_pct = float(2.0 * atr / px) if atr > 0 else 0.02
-    tp_pct = float(3.0 * atr / px) if atr > 0 else 0.04
+    stop_pct = float(2.0 * atr / px) if (atr and px > 0) else 0.02
+    tp_pct = float(3.0 * atr / px) if (atr and px > 0) else 0.04
 
     side: Literal["BUY", "SELL", "HOLD"] = "HOLD"
     conf = 0.0
@@ -82,15 +83,14 @@ def mean_reversion_atr(df: pd.DataFrame) -> SkillSignal:
 
 
 def breakout_vol_expansion(df: pd.DataFrame) -> SkillSignal:
-    """Donchian-20 break + ATR > 1.5×its 50-bar average."""
     h, l, c = df["high"], df["low"], df["close"]  # noqa: E741
     hh = h.rolling(20).max().shift(1)
     ll = l.rolling(20).min().shift(1)
     atr = _atr(df)
     expand = atr / atr.rolling(50).mean()
     px = float(c.iloc[-1])
-    stop_pct = float(2.0 * atr.iloc[-1] / px) if atr.iloc[-1] > 0 else 0.02
-    tp_pct = float(4.0 * atr.iloc[-1] / px) if atr.iloc[-1] > 0 else 0.06
+    stop_pct = float(2.0 * atr.iloc[-1] / px) if (atr.iloc[-1] and px > 0) else 0.02
+    tp_pct = float(4.0 * atr.iloc[-1] / px) if (atr.iloc[-1] and px > 0) else 0.06
 
     side: Literal["BUY", "SELL", "HOLD"] = "HOLD"
     conf = 0.0
@@ -110,7 +110,6 @@ def breakout_vol_expansion(df: pd.DataFrame) -> SkillSignal:
 
 
 def trend_follow_ema(df: pd.DataFrame) -> SkillSignal:
-    """EMA20 > EMA50 > EMA200 → long; symmetric short. Confirms with rising RSI."""
     c = df["close"]
     ema20 = c.ewm(span=20, adjust=False).mean()
     ema50 = c.ewm(span=50, adjust=False).mean()
@@ -118,8 +117,8 @@ def trend_follow_ema(df: pd.DataFrame) -> SkillSignal:
     rsi = _rsi(c)
     atr = _atr(df).iloc[-1]
     px = float(c.iloc[-1])
-    stop_pct = float(2.5 * atr / px) if atr > 0 else 0.025
-    tp_pct = float(5.0 * atr / px) if atr > 0 else 0.05
+    stop_pct = float(2.5 * atr / px) if (atr and px > 0) else 0.025
+    tp_pct = float(5.0 * atr / px) if (atr and px > 0) else 0.05
 
     side: Literal["BUY", "SELL", "HOLD"] = "HOLD"
     conf = 0.0
@@ -179,7 +178,35 @@ class SkillLibrary:
     def evaluate_all(self, df: pd.DataFrame) -> list[SkillSignal]:
         return [s.fn(df) for s in self.list_active()]
 
+    async def reload_archival_from_db(self) -> None:
+        """Rehydrate the in-memory archive set from the most recent SkillStatRow
+        per skill. Called at startup so weekly archival decisions survive restart.
+        """
+        from sqlalchemy import select
+
+        from hermes.memory.store import SkillStatRow, get_db
+
+        db = get_db()
+        async with db.session() as s:
+            rows = (
+                await s.execute(
+                    select(SkillStatRow).order_by(SkillStatRow.week_starting.desc())
+                )
+            ).scalars().all()
+        latest: dict[str, SkillStatRow] = {}
+        for r in rows:
+            latest.setdefault(r.skill_id, r)
+        self._archived = {sid for sid, r in latest.items() if r.archived}
+
 
 @lru_cache(maxsize=1)
 def get_skill_library() -> SkillLibrary:
-    return SkillLibrary(_REGISTRY)
+    lib = SkillLibrary(_REGISTRY)
+    # Best-effort lazy reload; safe to skip if no event loop / no DB yet.
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(lib.reload_archival_from_db())
+    except RuntimeError:
+        pass
+    return lib

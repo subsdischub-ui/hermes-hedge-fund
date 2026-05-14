@@ -15,7 +15,7 @@ from hermes.skills import get_skill_library
 log = get_logger(__name__)
 
 
-async def run_weekly_skill_rerank(lookback_days: int = 30, min_trades: int = 5) -> dict[str, dict]:
+async def run_weekly_skill_rerank(lookback_days: int = 30, min_trades: int = 10) -> dict[str, dict]:
     since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
     db = get_db()
     async with db.session() as s:
@@ -49,7 +49,14 @@ async def run_weekly_skill_rerank(lookback_days: int = 30, min_trades: int = 5) 
     lib = get_skill_library()
     async with db.session() as s:
         for rank, (skill_id, st) in enumerate(ranked):
-            archived = st["trades"] >= min_trades and st["sharpe"] < 0
+            # Only archive a skill if (a) we have >= min_trades closed trades AND
+            # (b) the cumulative pnl is negative AND (c) Sharpe is < 0. This
+            # avoids pruning a skill on a small sample of mostly-flat trades.
+            archived = (
+                st["trades"] >= min_trades
+                and st["pnl_usd"] < 0
+                and st["sharpe"] < 0
+            )
             s.add(
                 SkillStatRow(
                     week_starting=week_start,

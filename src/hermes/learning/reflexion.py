@@ -48,15 +48,10 @@ async def reflect_on_trade(trade_id: int) -> str:
     text = out.get("reflection", "") if isinstance(out, dict) else ""
     tags = out.get("tags", []) if isinstance(out, dict) else []
 
-    # Persist reflection on the journal row.
+    # Persist reflection on the already-closed journal row. We do NOT call
+    # journal.close() here — that would overwrite the original close timestamp.
     journal = TradeJournal()
-    await journal.close(
-        trade_id=trade_id,
-        exit_price=row.exit_price or 0.0,
-        pnl_usd=row.pnl_usd or 0.0,
-        fee_usd=row.fee_usd,
-        exit_reason=row.exit_reason,
-        reflection=text,
-    )
+    if text:
+        await journal.set_reflection(trade_id, text)
     log.info("trade_reflected", trade_id=trade_id, tags=tags)
     return text

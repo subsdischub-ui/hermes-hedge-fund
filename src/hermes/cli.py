@@ -64,7 +64,7 @@ def stage() -> None:
         rep = mgr.evaluate({
             "live_trades": stats["count"],
             "paper_trades": stats["count"],
-            "win_rate_vs_paper_sigma": (stats["win_rate"] or 0) * 2.0,
+            "rule_violations": 0,
         })
         typer.echo(rep.summary)
     asyncio.run(_run())

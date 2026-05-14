@@ -6,11 +6,14 @@ import numpy as np
 
 from hermes.execution import get_exchange
 from hermes.graph.state import HermesState
+from hermes.logging_setup import get_logger
 from hermes.memory.journal import TradeJournal
 from hermes.risk import get_risk_engine
 from hermes.risk.guardrails import TradeProposal
 from hermes.trm import get_trm
-from hermes.trm.encoder import ActionCodec, MarketStateEncoder, Action
+from hermes.trm.encoder import Action, ActionCodec, MarketStateEncoder
+
+log = get_logger(__name__)
 
 
 async def run(state: HermesState) -> HermesState:
@@ -51,12 +54,36 @@ async def run(state: HermesState) -> HermesState:
                 "confidence": verdict.confidence,
                 "used_trm": verdict.used_trm,
             }
-            # Soft-override: TRM may downgrade to HOLD; keep its confidence as a floor.
-            if refined.side != proposal.side and verdict.used_trm and verdict.confidence > 0.7:
-                proposal.side = refined.side
-            proposal.confidence = min(proposal.confidence, verdict.confidence)
+            # Only let the verdict override the trader's side when (a) TRM is real
+            # (not the Null fallback) AND (b) it is downgrading to HOLD AND
+            # (c) its halt-confidence is high. We refuse to flip BUY<->SELL or
+            # raise HOLD to a trade — those are LLM-level decisions.
+            if (
+                verdict.used_trm
+                and refined.side == "HOLD"
+                and verdict.confidence > 0.7
+            ):
+                log.info(
+                    "trm_downgrade_to_hold",
+                    symbol=proposal.symbol,
+                    original_side=proposal.side,
+                    trm_confidence=verdict.confidence,
+                )
+                proposal.side = "HOLD"
+            # TRM acts as a confidence CEILING when it's real; the NullVerifier
+            # returns confidence=1.0 so this is a no-op when TRM is disabled.
+            if verdict.used_trm:
+                proposal.confidence = min(proposal.confidence, verdict.confidence)
         except Exception as e:
-            state.trm_refinement = {"error": str(e), "used_trm": False, "confidence": 1.0}
+            # On any verifier error treat the proposal as UNVERIFIED — set
+            # confidence to 0 so the risk engine's confidence_floor will reject.
+            log.warning("trm_refine_failed", error=str(e), symbol=proposal.symbol)
+            state.trm_refinement = {
+                "error": str(e),
+                "used_trm": False,
+                "confidence": 0.0,
+            }
+            proposal.confidence = 0.0
 
     # --- deterministic risk engine ---
     engine = get_risk_engine()

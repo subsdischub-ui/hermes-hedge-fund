@@ -8,9 +8,11 @@ stages:
   stage_0_paper:
     venue: paper
     instruments: spot
-    per_trade_risk_cap_pct: 0.0    # paper only
+    # Paper mode still sizes positions (so we can measure performance).
+    # No real money is at risk; cap is conservative to mirror Stage 1 sizing.
+    per_trade_risk_cap_pct: 0.5
     max_open_positions: 3
-    daily_loss_kill_pct: 100.0
+    daily_loss_kill_pct: 5.0
     advance_when:
       paper_trades: 200
       walk_forward_sharpe: 1.0
@@ -80,12 +82,13 @@ agents:
   portfolio_manager:  primary
   reflector:          primary
   meta_optimizer:     escalation     # falls back to primary if no escalation URL
+  reflector_nightly:  primary
 
 trm:
   enabled: true
   state_len: 256                  # 8 channels * 32 bars
   action_len: 4                   # [side, size_bucket, stop_bucket, tp_bucket]
-  vocab_size: 96
+  vocab_size: 160                 # action region (0-95) + state region (96-159); see trm/encoder.py
   pad_id: 0
   ignore_label_id: 0
   hidden_size: 256                # smaller than puzzle defaults — trades are simpler

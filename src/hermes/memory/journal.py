@@ -61,15 +61,34 @@ class TradeJournal:
         exit_reason: str,
         reflection: str = "",
     ) -> None:
+        """Mark a trade as closed. Idempotent — already-closed rows keep their
+        original closed_at timestamp and their original fields are not rewritten."""
         db = get_db()
         async with db.session() as s:
             row = (await s.execute(select(JournalRow).where(JournalRow.id == trade_id))).scalar_one()
+            if row.closed_at is not None:
+                # Already closed by a prior call. Only refresh the reflection if
+                # the caller supplied a non-empty one.
+                if reflection:
+                    row.reflection = reflection
+                    await s.commit()
+                return
             row.exit_price = exit_price
             row.pnl_usd = pnl_usd
             row.fee_usd = fee_usd
             row.exit_reason = exit_reason
             row.reflection = reflection
             row.closed_at = datetime.now(timezone.utc)
+            await s.commit()
+
+    async def set_reflection(self, trade_id: int, reflection: str) -> None:
+        """Attach a reflection to an existing journal row without touching the
+        close timestamp or PnL. Used by the Reflexion loop after the row has
+        already been closed by the stop-watcher or PM."""
+        db = get_db()
+        async with db.session() as s:
+            row = (await s.execute(select(JournalRow).where(JournalRow.id == trade_id))).scalar_one()
+            row.reflection = reflection
             await s.commit()
 
     async def stats(self) -> dict[str, Any]:

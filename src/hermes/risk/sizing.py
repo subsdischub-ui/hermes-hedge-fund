@@ -31,9 +31,15 @@ class SizingOutput:
 class PositionSizer:
     MIN_TRADES_FOR_KELLY = 100
     ATR_K = 2.0
+    MIN_STOP_DIST_PCT = 0.003   # 0.3% — guard against ATR=0/NaN producing 50x notionals
 
     def size(self, inp: SizingInputs) -> SizingOutput:
-        stop_dist_pct = max(1e-4, self.ATR_K * inp.atr / inp.price)
+        # Defensive floor on stop distance: a buggy data source returning atr=0
+        # would otherwise produce notional = risk_usd / 0 → unbounded.
+        atr_pct = inp.atr / inp.price if inp.price > 0 else 0.0
+        if not (atr_pct > 0) or atr_pct != atr_pct:  # NaN check
+            atr_pct = 0.0
+        stop_dist_pct = max(self.MIN_STOP_DIST_PCT, self.ATR_K * atr_pct)
 
         # 1) Kelly contribution (only after enough trades)
         if (

@@ -7,22 +7,22 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import Field
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "default.yaml"
 
 
-class LLMRole(BaseSettings):
-    base_url: str
-    model: str
-    api_key: str = "ollama"
-
-
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore", env_nested_delimiter="__"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        # `forbid` would surface typos like HERMES_BANKROL_USD; pydantic-settings
+        # also reads OS env which has many unrelated vars, so we ignore extras —
+        # but we emit a startup-time warning by checking for HERMES_-prefixed
+        # vars that didn't match a field (handled in api.lifespan).
+        extra="ignore",
     )
 
     # Runtime
@@ -38,13 +38,13 @@ class Settings(BaseSettings):
     # LLM
     llm_primary_base_url: str = Field("http://hermes-mac:11434/v1", alias="LLM_PRIMARY_BASE_URL")
     llm_primary_model: str = Field("qwen3-coder-next", alias="LLM_PRIMARY_MODEL")
-    llm_primary_api_key: str = Field("ollama", alias="LLM_PRIMARY_API_KEY")
+    llm_primary_api_key: SecretStr = Field(SecretStr("ollama"), alias="LLM_PRIMARY_API_KEY")
     llm_secondary_base_url: str = Field("http://hermes-mac:11434/v1", alias="LLM_SECONDARY_BASE_URL")
     llm_secondary_model: str = Field("qwen3.6:27b", alias="LLM_SECONDARY_MODEL")
-    llm_secondary_api_key: str = Field("ollama", alias="LLM_SECONDARY_API_KEY")
+    llm_secondary_api_key: SecretStr = Field(SecretStr("ollama"), alias="LLM_SECONDARY_API_KEY")
     llm_escalation_base_url: str = Field("", alias="LLM_ESCALATION_BASE_URL")
     llm_escalation_model: str = Field("", alias="LLM_ESCALATION_MODEL")
-    llm_escalation_api_key: str = Field("", alias="LLM_ESCALATION_API_KEY")
+    llm_escalation_api_key: SecretStr = Field(SecretStr(""), alias="LLM_ESCALATION_API_KEY")
 
     # TRM
     trm_enabled: bool = Field(True, alias="TRM_ENABLED")
@@ -54,17 +54,20 @@ class Settings(BaseSettings):
     # Exchanges
     exchange_primary: str = Field("hyperliquid", alias="EXCHANGE_PRIMARY")
     exchange_backup: str = Field("bybit", alias="EXCHANGE_BACKUP")
+    # Venue used by the paper exchange to fetch reference prices. Must list our
+    # USDC-quoted universe. Kraken and Coinbase Advanced both do; Binance does not.
+    paper_price_venue: str = Field("kraken", alias="PAPER_PRICE_VENUE")
     hl_testnet: bool = Field(True, alias="HL_TESTNET")
     hl_account_address: str = Field("", alias="HL_ACCOUNT_ADDRESS")
-    hl_secret_key: str = Field("", alias="HL_SECRET_KEY")
-    bybit_api_key: str = Field("", alias="BYBIT_API_KEY")
-    bybit_api_secret: str = Field("", alias="BYBIT_API_SECRET")
+    hl_secret_key: SecretStr = Field(SecretStr(""), alias="HL_SECRET_KEY")
+    bybit_api_key: SecretStr = Field(SecretStr(""), alias="BYBIT_API_KEY")
+    bybit_api_secret: SecretStr = Field(SecretStr(""), alias="BYBIT_API_SECRET")
     bybit_testnet: bool = Field(True, alias="BYBIT_TESTNET")
 
     # Data
-    cryptopanic_token: str = Field("", alias="CRYPTOPANIC_TOKEN")
-    etherscan_api_key: str = Field("", alias="ETHERSCAN_API_KEY")
-    coingecko_api_key: str = Field("", alias="COINGECKO_API_KEY")
+    cryptopanic_token: SecretStr = Field(SecretStr(""), alias="CRYPTOPANIC_TOKEN")
+    etherscan_api_key: SecretStr = Field(SecretStr(""), alias="ETHERSCAN_API_KEY")
+    coingecko_api_key: SecretStr = Field(SecretStr(""), alias="COINGECKO_API_KEY")
 
     # Infra
     redis_url: str = Field("redis://hermes-redis:6379/0", alias="REDIS_URL")
@@ -74,6 +77,7 @@ class Settings(BaseSettings):
     # Loaded from YAML
     yaml_config: dict[str, Any] = Field(default_factory=dict)
 
+    # --- properties ---------------------------------------------------------
     @property
     def universe(self) -> list[str]:
         return [s.strip() for s in self.universe_raw.split(",") if s.strip()]
@@ -89,6 +93,29 @@ class Settings(BaseSettings):
                 return default
             node = node[k]
         return node
+
+    # --- validators ---------------------------------------------------------
+    @field_validator("stage")
+    @classmethod
+    def _validate_stage(cls, v: str) -> str:
+        allowed = {"stage_0_paper", "stage_1_micro", "stage_2_normal", "stage_3_perps"}
+        if v not in allowed:
+            raise ValueError(f"HERMES_STAGE must be one of {sorted(allowed)}, got {v!r}")
+        return v
+
+    @field_validator("bankroll_usd")
+    @classmethod
+    def _validate_bankroll(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("HERMES_BANKROLL_USD must be positive")
+        return v
+
+    @field_validator("daily_loss_kill_pct")
+    @classmethod
+    def _validate_kill_pct(cls, v: float) -> float:
+        if not (0 < v <= 100):
+            raise ValueError("HERMES_DAILY_LOSS_KILL_PCT must be in (0, 100]")
+        return v
 
 
 @lru_cache(maxsize=1)

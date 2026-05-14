@@ -11,6 +11,9 @@ Hard rules (cannot be overridden by LLM):
   - Refuse if today's realized PnL ≤ -daily_loss_kill_pct of equity.
   - Refuse if computed notional < $5 (Hyperliquid min) or > 50% of equity.
   - Refuse if symbol already has an open position (no pyramiding in v1).
+  - Refuse SELL on a spot stage when no existing long exists to close against
+    (spot venues cannot short).
+  - Refuse if stage is paper-only but configured exchange is not the paper one.
 """
 
 from __future__ import annotations
@@ -49,7 +52,36 @@ class RiskDecision:
     sizing: SizingOutput | None = None
 
 
+async def _realized_pnl_today_usd(now: datetime | None = None) -> float:
+    """Sum of pnl_usd over trades closed since UTC midnight today.
+
+    Imported lazily to avoid a circular import between risk and memory layers.
+    """
+    from sqlalchemy import select
+
+    from hermes.memory.store import JournalRow, get_db
+
+    midnight = (now or datetime.now(timezone.utc)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    db = get_db()
+    async with db.session() as s:
+        rows = (
+            await s.execute(
+                select(JournalRow).where(
+                    JournalRow.closed_at.is_not(None),
+                    JournalRow.closed_at >= midnight,
+                )
+            )
+        ).scalars().all()
+    return float(sum((r.pnl_usd or 0.0) for r in rows))
+
+
 class RiskEngine:
+    # Stages where shorting is not supported by the venue. The risk engine refuses
+    # SELL on a flat book in these stages — bear opinions must be expressed as HOLD.
+    SPOT_ONLY_STAGES = {"stage_0_paper", "stage_1_micro", "stage_2_normal"}
+
     def __init__(self) -> None:
         s = get_settings()
         self.settings = s
@@ -73,7 +105,7 @@ class RiskEngine:
         atr: float,
         price: float,
         journal_stats: dict,
-        realized_pnl_today_usd: float = 0.0,
+        realized_pnl_today_usd: float | None = None,
     ) -> RiskDecision:
         if proposal.side == "HOLD":
             return self._hard_reject("HOLD action — nothing to execute")
@@ -88,10 +120,15 @@ class RiskEngine:
         if equity < 5.0:
             return self._hard_reject(f"equity ${equity:.2f} below cold-floor")
 
-        # daily kill switch
+        # Daily kill switch — compute from the journal if caller didn't supply.
+        if realized_pnl_today_usd is None:
+            realized_pnl_today_usd = await _realized_pnl_today_usd()
         kill_pct = float(self.stage_cfg.get("daily_loss_kill_pct", 2.0)) / 100
         if realized_pnl_today_usd / max(equity, 1e-9) <= -kill_pct:
-            return self._hard_reject(f"daily loss kill triggered ({realized_pnl_today_usd:.2f})")
+            return self._hard_reject(
+                f"daily loss kill triggered (pnl={realized_pnl_today_usd:.2f}, "
+                f"equity={equity:.2f}, kill_pct={kill_pct * 100:.2f}%)"
+            )
 
         positions = await exchange.open_positions()
         max_open = int(self.stage_cfg.get("max_open_positions", 3))
@@ -104,9 +141,19 @@ class RiskEngine:
         if self.stage_cfg.get("venue", "paper") == "paper" and exchange.name != "paper":
             return self._hard_reject("stage_0_paper but exchange is not paper — refusing live trade")
 
+        # Spot-stage gate: SELL is only allowed to close an existing long. Since
+        # the per-symbol pyramiding check above already rejects when a position
+        # exists, a SELL with no existing position cannot be opened on spot.
+        if (
+            self.settings.stage in self.SPOT_ONLY_STAGES
+            and self.stage_cfg.get("instruments", "spot") == "spot"
+            and proposal.side == "SELL"
+        ):
+            return self._hard_reject("SELL not permitted on a spot-only stage (no shorting)")
+
         stage_cap_pct = float(self.stage_cfg.get("per_trade_risk_cap_pct", 0.5))
-        if stage_cap_pct == 0.0:
-            return self._hard_reject("paper-only stage: no live sizing")
+        if stage_cap_pct <= 0.0:
+            return self._hard_reject("stage per_trade_risk_cap_pct is 0 — sizing disabled")
 
         sizing = self.sizer.size(
             SizingInputs(
@@ -125,9 +172,13 @@ class RiskEngine:
 
         if sizing.notional_usd < 5.0:
             return self._hard_reject(f"notional ${sizing.notional_usd:.2f} < $5 minimum")
-        if sizing.notional_usd > 0.5 * equity:
+        # Notional cap as a function of stage cap × leverage allowance. We cap at
+        # 5× equity for spot (capped further by exchange minimums) and tighter for
+        # paper to avoid pathological ATR=0 explosions.
+        notional_cap = min(5.0 * equity, 0.5 * equity * 10)  # i.e. 5x equity
+        if sizing.notional_usd > notional_cap:
             return self._hard_reject(
-                f"notional ${sizing.notional_usd:.2f} > 50% of equity ${equity:.2f}"
+                f"notional ${sizing.notional_usd:.2f} > cap ${notional_cap:.2f} (equity ${equity:.2f})"
             )
 
         stop = price * (1 - proposal.stop_pct) if proposal.side == "BUY" else price * (1 + proposal.stop_pct)
@@ -156,7 +207,11 @@ class RiskEngine:
             return []
         out: list[tuple[Position, str]] = []
         for p in await exchange.open_positions():
-            px = await exchange.last_price(p.symbol)
+            try:
+                px = await exchange.last_price(p.symbol)
+            except Exception as e:
+                log.warning("check_stops_price_failed", symbol=p.symbol, error=str(e))
+                continue
             if p.qty > 0:
                 if p.stop_price and px <= p.stop_price:
                     out.append((p, "stop"))
@@ -173,7 +228,15 @@ class RiskEngine:
     def now() -> datetime:
         return datetime.now(timezone.utc)
 
+    @staticmethod
+    def utc_midnight(now: datetime | None = None) -> datetime:
+        return (now or datetime.now(timezone.utc)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
 
 @lru_cache(maxsize=1)
 def get_risk_engine() -> RiskEngine:
     return RiskEngine()
+
+

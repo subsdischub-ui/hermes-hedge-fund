@@ -22,7 +22,7 @@ def get_exchange() -> Exchange:
         return PaperExchange(
             state_path=s.data_dir / "paper_state.json",
             starting_equity=s.bankroll_usd,
-            venue_for_prices="binance",
+            venue_for_prices=s.paper_price_venue,
         )
     if venue == "hyperliquid":
         from hermes.execution.hyperliquid import HyperliquidExchange
