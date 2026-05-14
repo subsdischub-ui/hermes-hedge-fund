@@ -1,0 +1,91 @@
+[project]
+name = "hermes"
+version = "0.1.0"
+description = "Hermès — autonomous AI crypto hedge-fund agent (LLM + TRM verifier, local-first, Dokploy-deployable)"
+requires-python = ">=3.12"
+license = { text = "MIT" }
+authors = [{ name = "Malachie Kengne" }]
+
+dependencies = [
+    # API + scheduling
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "apscheduler>=3.10",
+    "httpx>=0.27",
+    "pydantic>=2.9",
+    "pydantic-settings>=2.6",
+    "python-dotenv>=1.0",
+    "typer>=0.13",
+    "structlog>=24.4",
+    "tenacity>=9.0",
+
+    # LLM orchestration
+    "openai>=1.55",
+    "langgraph>=0.2.50",
+    "langchain-core>=0.3",
+
+    # Memory
+    "sqlalchemy>=2.0",
+    "aiosqlite>=0.20",
+    "chromadb>=0.5",
+    "sentence-transformers>=3.3",
+
+    # Market data + exchanges
+    "ccxt>=4.4",
+    "hyperliquid-python-sdk>=0.7",
+    "pandas>=2.2",
+    "numpy>=2.0",
+    "pandas-ta>=0.3.14b",
+
+    # Modelling (TRM runs on CPU inside the container)
+    "torch>=2.5",
+    "einops>=0.8",
+    "pyyaml>=6.0",
+
+    # Cache / queue
+    "redis>=5.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "freezegun>=1.5",
+]
+gpu = [
+    # only if you train TRM on a CUDA box
+    "adam-atan2-pytorch>=0.1",
+]
+
+[project.scripts]
+hermes = "hermes.cli:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+# CPU-only torch wheels keep the container small.
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }

@@ -1,0 +1,82 @@
+# Dokploy reads this file at the repo root. Configure these env vars in the
+# Dokploy UI (Environment tab):
+#   HERMES_DOMAIN_API           (e.g. api.hermes.example.com)
+#   TS_AUTHKEY                  (ephemeral, tagged tailscale auth key)
+#   LLM_PRIMARY_BASE_URL=http://hermes-mac:11434/v1
+#   ...rest of .env.example
+#
+# The 'dokploy-network' must be created externally (Dokploy creates it).
+
+services:
+
+  # --------- Tailscale sidecar: joins your Mac's tailnet. -----------------
+  # hermes-agent shares this container's network namespace so the LLM call
+  # to http://hermes-mac:11434 resolves over Tailscale MagicDNS.
+  hermes-ts:
+    image: tailscale/tailscale:latest
+    hostname: ${TS_HOSTNAME:-hermes-agent}
+    environment:
+      TS_AUTHKEY: ${TS_AUTHKEY}
+      TS_EXTRA_ARGS: --advertise-tags=tag:hermes
+      TS_STATE_DIR: /var/lib/tailscale
+    volumes:
+      - hermes-ts-state:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add: [NET_ADMIN, NET_RAW]
+    restart: unless-stopped
+    networks: [dokploy-network]
+
+  # --------- Hermès agent (main service) ----------------------------------
+  hermes-agent:
+    image: ghcr.io/${GITHUB_REPOSITORY:-you/hermes}/hermes-agent:${TAG:-latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      hermes-ts:    { condition: service_started }
+      hermes-redis: { condition: service_healthy }
+    # Share the Tailscale sidecar's network so hermes-mac resolves via MagicDNS.
+    network_mode: "service:hermes-ts"
+    env_file: .env
+    environment:
+      HERMES_DATA_DIR: /data
+      REDIS_URL: redis://hermes-redis:6379/0
+      DATABASE_URL: sqlite+aiosqlite:////data/hermes.db
+      VECTOR_DIR: /data/chroma
+    volumes:
+      - hermes-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.hermes-api.rule=Host(`${HERMES_DOMAIN_API}`)
+      - traefik.http.routers.hermes-api.entrypoints=websecure
+      - traefik.http.routers.hermes-api.tls.certresolver=letsencrypt
+      - traefik.http.services.hermes-api.loadbalancer.server.port=8000
+
+  hermes-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - hermes-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [dokploy-network]
+
+volumes:
+  hermes-data:
+  hermes-ts-state:
+  hermes-redis-data:
+
+networks:
+  dokploy-network:
+    external: true

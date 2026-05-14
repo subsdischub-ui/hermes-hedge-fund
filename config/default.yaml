@@ -1,0 +1,110 @@
+# Hermès — runtime config. Loaded by hermes.settings.Settings; env vars override.
+universe: [BTC/USDC, ETH/USDC, SOL/USDC]
+bankroll_usd: 100
+base_currency: USDC
+
+# 4-stage maturity ladder.
+stages:
+  stage_0_paper:
+    venue: paper
+    instruments: spot
+    per_trade_risk_cap_pct: 0.0    # paper only
+    max_open_positions: 3
+    daily_loss_kill_pct: 100.0
+    advance_when:
+      paper_trades: 200
+      walk_forward_sharpe: 1.0
+      max_drawdown_pct: 15.0
+
+  stage_1_micro:
+    venue: hyperliquid
+    instruments: spot
+    per_trade_risk_cap_pct: 0.5
+    max_open_positions: 3
+    daily_loss_kill_pct: 2.0
+    advance_when:
+      live_trades: 30
+      win_rate_vs_paper_sigma: 1.0
+      rule_violations: 0
+
+  stage_2_normal:
+    venue: hyperliquid
+    instruments: spot
+    per_trade_risk_cap_pct: 2.0
+    max_open_positions: 5
+    daily_loss_kill_pct: 4.0
+    advance_when:
+      days_since_advance: 60
+      sortino: 1.5
+      profit_factor: 1.3
+
+  stage_3_perps:
+    venue: hyperliquid
+    instruments: perp
+    leverage_initial: 1
+    leverage_max: 2
+    per_trade_risk_cap_pct: 2.0
+    max_open_positions: 5
+    daily_loss_kill_pct: 5.0
+    advance_when:
+      days_since_advance: 90
+      calmar: 2.0
+      equity_floor_usd: 250
+
+sizing:
+  # position_size_usd = (equity * risk_pct) / (k * ATR(14) / price)
+  atr_window: 14
+  atr_k: 2.0
+  fractional_kelly: 0.20         # f_kelly multiplier — never full Kelly
+  confidence_floor: 0.0          # below this, force HOLD
+  per_trade_floor_pct: 0.25      # never size smaller than this in basis points*100
+  min_trades_before_trusting_kelly: 100
+
+loops:
+  # APScheduler cron specs in Hermès TZ.
+  market_tick:      "*/5 * * * *"        # main decision loop, every 5 minutes
+  per_trade_close:  "event"
+  nightly_reflect:  "0 23 * * *"
+  weekly_rerank:    "0 22 * * 0"
+  monthly_compile:  "0 21 1 * *"
+
+agents:
+  # Which LLM role each agent maps to. "secondary" = fast classifier work.
+  market_analyst:     secondary
+  news_analyst:       secondary
+  sentiment_analyst:  secondary
+  bull_researcher:    primary
+  bear_researcher:    primary
+  trader:             primary
+  risk_manager:       primary
+  portfolio_manager:  primary
+  reflector:          primary
+  meta_optimizer:     escalation     # falls back to primary if no escalation URL
+
+trm:
+  enabled: true
+  state_len: 256                  # 8 channels * 32 bars
+  action_len: 4                   # [side, size_bucket, stop_bucket, tp_bucket]
+  vocab_size: 96
+  pad_id: 0
+  ignore_label_id: 0
+  hidden_size: 256                # smaller than puzzle defaults — trades are simpler
+  num_heads: 4
+  expansion: 4
+  H_cycles: 3
+  L_cycles: 6
+  L_layers: 2
+  halt_max_steps: 6
+  confidence_floor: 0.55
+
+memory:
+  vector_collection: hermes_lessons
+  embedding_model: sentence-transformers/all-MiniLM-L6-v2
+  episodic_retention_days: 365
+  lessons_top_k: 6
+
+data:
+  ohlcv_timeframes: [1m, 5m, 15m, 1h, 4h, 1d]
+  ohlcv_limit: 500
+  refresh_interval_sec: 60
+  news_sources: [cryptopanic, reddit_cc]
