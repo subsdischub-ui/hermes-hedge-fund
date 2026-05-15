@@ -15,11 +15,13 @@ build/
 .ruff_cache/
 .idea/
 .vscode/
-data/
+# Anchor runtime data/checkpoint dirs at repo root only — the python packages
+# src/hermes/data/ and src/hermes/trm/ must remain tracked.
+/data/
+/trm/
+/chroma/
 *.db
 *.db-shm
 *.db-wal
-chroma/
-trm/
 .DS_Store
 Thumbs.db

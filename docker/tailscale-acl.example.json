@@ -1,0 +1,21 @@
+{
+  "tagOwners": {
+    "tag:mac-llm": ["autogroup:admin"],
+    "tag:hermes":  ["autogroup:admin"]
+  },
+  "acls": [
+    {
+      "action": "accept",
+      "src": ["tag:hermes"],
+      "dst": ["tag:mac-llm:11434"]
+    },
+    {
+      "action": "accept",
+      "src": ["autogroup:admin"],
+      "dst": ["*:*"]
+    }
+  ],
+  "ssh": [
+    { "action": "check", "src": ["autogroup:admin"], "dst": ["autogroup:self"], "users": ["autogroup:nonroot", "root"] }
+  ]
+}
