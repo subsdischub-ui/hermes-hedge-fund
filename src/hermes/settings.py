@@ -10,7 +10,6 @@ import yaml
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "default.yaml"
 
 
@@ -34,6 +33,9 @@ class Settings(BaseSettings):
     universe_raw: str = Field("BTC/USDC,ETH/USDC,SOL/USDC", alias="HERMES_UNIVERSE")
     max_open_positions: int = Field(3, alias="HERMES_MAX_OPEN_POSITIONS")
     daily_loss_kill_pct: float = Field(2.0, alias="HERMES_DAILY_LOSS_KILL_PCT")
+    # API key for the FastAPI surface (x-api-key). Empty = open (paper convenience);
+    # set HERMES_API_KEY before any live stage to lock /tick + /learn/* down.
+    api_key: SecretStr = Field(SecretStr(""), alias="HERMES_API_KEY")
 
     # LLM
     llm_primary_base_url: str = Field("http://hermes-mac:11434/v1", alias="LLM_PRIMARY_BASE_URL")

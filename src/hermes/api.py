@@ -5,7 +5,8 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Security
+from fastapi.security import APIKeyHeader
 
 from hermes.execution import get_exchange
 from hermes.graph import HermesOrchestrator
@@ -43,13 +44,29 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Hermès", version="0.1.0", lifespan=lifespan)
 
+_api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
+
+
+def _api_key_ok(provided: str | None, configured: str) -> bool:
+    """Open when no key is configured; otherwise require an exact match."""
+    if not configured:
+        return True
+    return provided == configured
+
+
+async def require_api_key(key: str | None = Security(_api_key_header)) -> None:
+    """Dependency guarding side-effectful endpoints (/tick, /learn/*, /status).
+    /health stays open for the container healthcheck."""
+    if not _api_key_ok(key, get_settings().api_key.get_secret_value()):
+        raise HTTPException(status_code=401, detail="invalid or missing x-api-key")
+
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"status": "ok"}
 
 
-@app.get("/status")
+@app.get("/status", dependencies=[Depends(require_api_key)])
 async def status() -> dict[str, Any]:
     s = get_settings()
     exchange = get_exchange()
@@ -78,7 +95,7 @@ async def status() -> dict[str, Any]:
     }
 
 
-@app.post("/tick/{symbol_base}")
+@app.post("/tick/{symbol_base}", dependencies=[Depends(require_api_key)])
 async def manual_tick(symbol_base: str) -> dict[str, Any]:
     symbol = f"{symbol_base.upper()}/USDC"
     if symbol not in get_settings().universe:
@@ -96,13 +113,13 @@ async def manual_tick(symbol_base: str) -> dict[str, Any]:
     }
 
 
-@app.post("/learn/nightly")
+@app.post("/learn/nightly", dependencies=[Depends(require_api_key)])
 async def trigger_nightly() -> dict[str, Any]:
     n = await run_nightly_reflection()
     return {"lessons_added": n}
 
 
-@app.post("/learn/weekly")
+@app.post("/learn/weekly", dependencies=[Depends(require_api_key)])
 async def trigger_weekly() -> dict[str, Any]:
     out = await run_weekly_skill_rerank()
     return {"skills": out}

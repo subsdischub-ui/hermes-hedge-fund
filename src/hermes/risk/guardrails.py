@@ -19,7 +19,7 @@ Hard rules (cannot be overridden by LLM):
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from typing import Literal
 
@@ -36,6 +36,15 @@ from hermes.settings import get_settings
 log = get_logger(__name__)
 
 Decision = Literal["APPROVED", "REJECTED"]
+
+# Per-venue minimum order notional (USD). Hyperliquid rejects < $10.
+_VENUE_MIN_NOTIONAL = {"paper": 5.0, "hyperliquid": 10.0, "bybit": 5.0}
+
+
+def venue_min_notional(venue: str) -> float:
+    """Minimum order notional for a venue; conservative $10 default for unknown
+    (live) venues so we never approve an order the exchange will zero-fill."""
+    return _VENUE_MIN_NOTIONAL.get(venue, 10.0)
 
 
 @dataclass
@@ -66,7 +75,7 @@ async def _realized_pnl_today_usd(now: datetime | None = None) -> float:
 
     from hermes.memory.store import JournalRow, get_db
 
-    midnight = (now or datetime.now(timezone.utc)).replace(
+    midnight = (now or datetime.now(UTC)).replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     db = get_db()
@@ -101,6 +110,7 @@ class RiskEngine:
         # Average correlation of the universe (BTC/ETH/SOL ~0.85). Used to haircut
         # new positions so the aggregate book risk does not stack on a single factor.
         self.correlation_rho = float(sizing_cfg.get("correlation_rho", 0.85))
+        self.min_notional = venue_min_notional(self.stage_cfg.get("venue", "paper"))
 
     def _hard_reject(self, reason: str) -> RiskDecision:
         log.info("risk_reject", reason=reason)
@@ -183,8 +193,10 @@ class RiskEngine:
             )
         )
 
-        if sizing.notional_usd < 5.0:
-            return self._hard_reject(f"notional ${sizing.notional_usd:.2f} < $5 minimum")
+        if sizing.notional_usd < self.min_notional:
+            return self._hard_reject(
+                f"notional ${sizing.notional_usd:.2f} < ${self.min_notional:.0f} venue minimum"
+            )
         # Notional cap as a function of stage cap × leverage allowance. We cap at
         # 5× equity for spot (capped further by exchange minimums) and tighter for
         # paper to avoid pathological ATR=0 explosions.
@@ -239,11 +251,11 @@ class RiskEngine:
 
     @staticmethod
     def now() -> datetime:
-        return datetime.now(timezone.utc)
+        return datetime.now(UTC)
 
     @staticmethod
     def utc_midnight(now: datetime | None = None) -> datetime:
-        return (now or datetime.now(timezone.utc)).replace(
+        return (now or datetime.now(UTC)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
 
