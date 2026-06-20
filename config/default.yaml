@@ -61,6 +61,10 @@ sizing:
   confidence_floor: 0.0          # below this, force HOLD
   per_trade_floor_pct: 0.25      # never size smaller than this in basis points*100
   min_trades_before_trusting_kelly: 100
+  correlation_rho: 0.85          # avg correlation of the universe (BTC/ETH/SOL); haircuts
+                                 # new correlated positions so book risk doesn't stack
+  target_vol_per_bar: 0.01       # vol-targeting reference (per 1h bar); risk budget scales
+                                 # down when HAR-RV forecast vol exceeds this, up (bounded) when calm
 
 fees:
   # Hyperliquid taker/maker fees in basis points (mid-2026). The paper exchange

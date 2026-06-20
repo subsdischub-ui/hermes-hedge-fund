@@ -2,7 +2,18 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+
+
+def correlation_haircut(n_existing: int, rho: float) -> float:
+    """Scale a new position so AGGREGATE book risk stays ~constant as correlated
+    positions accumulate: 1 / sqrt(1 + n_existing * rho). Returns 1.0 for the
+    first position or an uncorrelated book. BTC/ETH/SOL move together (rho ~0.85),
+    so 3 independent "0.5% risk" longs are really ~1.5% of concentrated BTC-beta;
+    this haircut prevents that stacking."""
+    rho = max(0.0, min(1.0, rho))
+    return 1.0 / math.sqrt(1.0 + max(0, n_existing) * rho)
 
 
 @dataclass
@@ -17,6 +28,8 @@ class SizingInputs:
     stage_cap_pct: float        # cap from stage config (e.g. 0.5%)
     floor_pct: float = 0.25     # 0.25%
     fractional_kelly: float = 0.20
+    correlation_haircut: float = 1.0  # 1.0 = no haircut (first/uncorrelated position)
+    vol_scale: float = 1.0            # vol-targeting multiplier (1.0 = neutral)
 
 
 @dataclass
@@ -66,6 +79,13 @@ class PositionSizer:
 
         risk_pct = max(floor_frac, min(stage_cap_frac, raw))
 
+        # 2b) Correlation haircut + vol-targeting — applied AFTER the clamp so a
+        # correlated book or an elevated-vol regime can legitimately push the
+        # position below the per-trade floor (aggregate/regime risk is what matters).
+        haircut = max(0.0, min(1.0, inp.correlation_haircut))
+        vol_scale = max(0.0, inp.vol_scale)
+        risk_pct *= haircut * vol_scale
+
         # 3) Convert risk to position size: risk_usd = risk_pct * equity,
         #    notional = risk_usd / stop_dist_pct (so a stop-out loses risk_usd).
         risk_usd = risk_pct * inp.equity_usd
@@ -74,7 +94,8 @@ class PositionSizer:
 
         rationale = (
             f"risk={risk_pct * 100:.3f}% (kelly={kelly:.3f}, conf={confidence:.2f}, "
-            f"cap={inp.stage_cap_pct}%, floor={inp.floor_pct}%) | "
+            f"cap={inp.stage_cap_pct}%, floor={inp.floor_pct}%, corr_haircut={haircut:.2f}, "
+            f"vol_scale={vol_scale:.2f}) | "
             f"stop_dist={stop_dist_pct * 100:.2f}% (2*ATR/price) | "
             f"notional=${notional:.2f}"
         )

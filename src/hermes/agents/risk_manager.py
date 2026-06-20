@@ -11,6 +11,8 @@ from hermes.memory.journal import TradeJournal
 from hermes.risk import get_risk_engine
 from hermes.risk.calibration import get_confidence_calibrator
 from hermes.risk.guardrails import TradeProposal
+from hermes.risk.volforecast import har_rv_forecast, vol_target_scale
+from hermes.settings import get_settings
 from hermes.trm import get_trm
 from hermes.trm.encoder import Action, ActionCodec, MarketStateEncoder
 
@@ -108,6 +110,23 @@ async def run(state: HermesState) -> HermesState:
                 calibrated=round(proposal.confidence, 4),
             )
 
+    # --- vol-targeting: scale the risk budget by HAR-RV forecast vs target ---
+    vol_scale = 1.0
+    if state.ohlcv is not None and side != "HOLD":
+        try:
+            closes = state.ohlcv["close"].astype(float).to_numpy()
+            rets = (np.diff(closes) / closes[:-1]).tolist()
+            sigma_hat = har_rv_forecast(rets)
+            target_vol = float(get_settings().yaml("sizing", "target_vol_per_bar", default=0.01))
+            vol_scale = vol_target_scale(sigma_hat, target_vol)
+            state.vol_forecast = {
+                "sigma_hat": sigma_hat,
+                "target_vol": target_vol,
+                "vol_scale": vol_scale,
+            }
+        except Exception as e:
+            log.warning("vol_forecast_failed", error=str(e), symbol=proposal.symbol)
+
     # --- deterministic risk engine ---
     engine = get_risk_engine()
     exchange = get_exchange()
@@ -119,6 +138,7 @@ async def run(state: HermesState) -> HermesState:
         atr=float(state.snapshot.get("atr", 0.0)),
         price=float(state.snapshot.get("price", 0.0)),
         journal_stats=stats,
+        vol_scale=vol_scale,
     )
     state.risk_decision = {
         "decision": decision.decision,

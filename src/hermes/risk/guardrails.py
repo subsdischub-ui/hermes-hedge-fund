@@ -25,7 +25,12 @@ from typing import Literal
 
 from hermes.execution.base import Exchange, Order, Position
 from hermes.logging_setup import get_logger
-from hermes.risk.sizing import PositionSizer, SizingInputs, SizingOutput
+from hermes.risk.sizing import (
+    PositionSizer,
+    SizingInputs,
+    SizingOutput,
+    correlation_haircut,
+)
 from hermes.settings import get_settings
 
 log = get_logger(__name__)
@@ -93,6 +98,9 @@ class RiskEngine:
         self.atr_k = float(sizing_cfg.get("atr_k", 2.0))
         self.floor_pct = float(sizing_cfg.get("per_trade_floor_pct", 0.25))
         self.fractional_kelly = float(sizing_cfg.get("fractional_kelly", 0.20))
+        # Average correlation of the universe (BTC/ETH/SOL ~0.85). Used to haircut
+        # new positions so the aggregate book risk does not stack on a single factor.
+        self.correlation_rho = float(sizing_cfg.get("correlation_rho", 0.85))
 
     def _hard_reject(self, reason: str) -> RiskDecision:
         log.info("risk_reject", reason=reason)
@@ -106,6 +114,7 @@ class RiskEngine:
         price: float,
         journal_stats: dict,
         realized_pnl_today_usd: float | None = None,
+        vol_scale: float = 1.0,
     ) -> RiskDecision:
         if proposal.side == "HOLD":
             return self._hard_reject("HOLD action — nothing to execute")
@@ -167,6 +176,10 @@ class RiskEngine:
                 stage_cap_pct=stage_cap_pct,
                 floor_pct=self.floor_pct,
                 fractional_kelly=self.fractional_kelly,
+                # n_existing = other open positions (same-symbol is already rejected
+                # above), so a 2nd/3rd correlated leg is sized down accordingly.
+                correlation_haircut=correlation_haircut(len(positions), self.correlation_rho),
+                vol_scale=vol_scale,
             )
         )
 
