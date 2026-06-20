@@ -22,7 +22,7 @@ import asyncio
 import json
 import os
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -35,11 +35,24 @@ log = get_logger(__name__)
 
 class PaperExchange(Exchange):
     name = "paper"
-    FEE_BPS = 5  # 0.05% taker — matches Hyperliquid
-    SLIPPAGE_BPS = 3  # 0.03% market-impact assumption for paper fills
+    # Conservative fallbacks only. Real fees are venue-/instrument-specific and
+    # injected from config (see config/default.yaml:fees and execution.factory).
+    # NOTE: 5 bps under-charged vs Hyperliquid spot taker (7 bps) — that gap
+    # inflated the paper Sharpe and could open the stage gates on a fictional edge.
+    FEE_BPS = 7      # Hyperliquid spot taker
+    SLIPPAGE_BPS = 3  # market-impact assumption for paper fills
 
-    def __init__(self, state_path: Path, starting_equity: float, venue_for_prices: str | None = None):
+    def __init__(
+        self,
+        state_path: Path,
+        starting_equity: float,
+        venue_for_prices: str | None = None,
+        fee_bps: float | None = None,
+        slippage_bps: float | None = None,
+    ):
         self.state_path = state_path
+        self.fee_bps = float(self.FEE_BPS if fee_bps is None else fee_bps)
+        self.slippage_bps = float(self.SLIPPAGE_BPS if slippage_bps is None else slippage_bps)
         self.market = get_market(venue_for_prices) if venue_for_prices else get_market()
         if state_path.exists():
             self._state = json.loads(state_path.read_text())
@@ -128,10 +141,10 @@ class PaperExchange(Exchange):
         async with self._lock:
             mid = order.price or await self.last_price(order.symbol)
             # Apply paper slippage: BUY pays slightly above mid, SELL receives below.
-            slip = self.SLIPPAGE_BPS / 10_000
+            slip = self.slippage_bps / 10_000
             px = mid * (1 + slip) if order.side == "BUY" else mid * (1 - slip)
             notional = px * order.qty
-            fee = notional * (self.FEE_BPS / 10_000)
+            fee = notional * (self.fee_bps / 10_000)
             signed_qty = order.qty if order.side == "BUY" else -order.qty
 
             positions = self._state["positions"]
@@ -144,7 +157,7 @@ class PaperExchange(Exchange):
                     "entry_price": px,
                     "stop_price": order.stop_price,
                     "take_profit": order.take_profit,
-                    "opened_at": datetime.now(timezone.utc).isoformat(),
+                    "opened_at": datetime.now(UTC).isoformat(),
                     "skill_id": order.extra.get("skill_id", ""),
                     "thesis": order.extra.get("thesis", ""),
                 }
@@ -185,7 +198,7 @@ class PaperExchange(Exchange):
                     self._state["history"].append(
                         {
                             "symbol": order.symbol,
-                            "closed_at": datetime.now(timezone.utc).isoformat(),
+                            "closed_at": datetime.now(UTC).isoformat(),
                             "qty_closed": float(closed_qty),
                             "pnl_usd": float(realized) - fee * (closed_qty / order.qty),
                             "skill_id": pos.get("skill_id", ""),
@@ -201,7 +214,7 @@ class PaperExchange(Exchange):
                         pos["entry_price"] = px
                         pos["stop_price"] = order.stop_price
                         pos["take_profit"] = order.take_profit
-                        pos["opened_at"] = datetime.now(timezone.utc).isoformat()
+                        pos["opened_at"] = datetime.now(UTC).isoformat()
                         # Account for the flipped half's open-leg cash flow.
                         flipped_notional = abs(new_qty) * px
                         if new_qty > 0:

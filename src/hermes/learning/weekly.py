@@ -1,13 +1,19 @@
-"""Weekly: re-rank skills by realized 30-day Sharpe; archive underperformers."""
+"""Weekly: re-rank skills by Deflated Sharpe Ratio (anti-cherry-pick) and archive
+only skills that have a real track record AND show no statistical evidence of edge.
+
+Replaces the previous naive 30-day annualized Sharpe (which treated trades as
+i.i.d., bolted on a spurious sqrt(252), and pruned on Sharpe < 0 across several
+skills tested in parallel — textbook backtest overfitting). See learning/stats.py.
+"""
 
 from __future__ import annotations
 
-import math
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
+from hermes.learning.stats import score_skills
 from hermes.logging_setup import get_logger
 from hermes.memory.store import JournalRow, SkillStatRow, get_db
 from hermes.skills import get_skill_library
@@ -15,8 +21,17 @@ from hermes.skills import get_skill_library
 log = get_logger(__name__)
 
 
+def returns_by_skill(rows) -> dict[str, list[float]]:
+    """Group closed-trade rows into per-skill, per-trade returns (pnl / notional)."""
+    groups: dict[str, list[float]] = defaultdict(list)
+    for r in rows:
+        notional = max(abs(float(r.entry_price) * float(r.qty)), 1e-9)
+        groups[r.skill_id or "unknown"].append(float(r.pnl_usd or 0.0) / notional)
+    return dict(groups)
+
+
 async def run_weekly_skill_rerank(lookback_days: int = 30, min_trades: int = 10) -> dict[str, dict]:
-    since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    since = datetime.now(UTC) - timedelta(days=lookback_days)
     db = get_db()
     async with db.session() as s:
         rows = (
@@ -28,51 +43,44 @@ async def run_weekly_skill_rerank(lookback_days: int = 30, min_trades: int = 10)
             )
         ).scalars().all()
 
-    groups: dict[str, list[JournalRow]] = defaultdict(list)
+    # Win count + cumulative PnL per skill, for the persisted report.
+    wins_pnl: dict[str, tuple[int, float]] = {}
+    grouped: dict[str, list] = defaultdict(list)
     for r in rows:
-        groups[r.skill_id or "unknown"].append(r)
+        grouped[r.skill_id or "unknown"].append(r)
+    for sid, rs in grouped.items():
+        wins_pnl[sid] = (
+            sum(1 for t in rs if (t.pnl_usd or 0) > 0),
+            sum((t.pnl_usd or 0) for t in rs),
+        )
 
-    stats: dict[str, dict] = {}
-    for skill_id, trades in groups.items():
-        n = len(trades)
-        wins = sum(1 for t in trades if (t.pnl_usd or 0) > 0)
-        pnl = sum((t.pnl_usd or 0) for t in trades)
-        rets = [(t.pnl_usd or 0) / max(abs(t.entry_price * t.qty), 1e-9) for t in trades]
-        mean = sum(rets) / n if n else 0.0
-        var = sum((r - mean) ** 2 for r in rets) / n if n > 1 else 0.0
-        sharpe = mean / math.sqrt(var) * math.sqrt(252) if var > 0 else 0.0
-        stats[skill_id] = {"trades": n, "wins": wins, "pnl_usd": pnl, "sharpe": sharpe}
-
-    ranked = sorted(stats.items(), key=lambda kv: kv[1]["sharpe"], reverse=True)
-    week_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    # DSR-based scoring + archival decision (deflated by the number of skills tested).
+    scored = score_skills(returns_by_skill(rows), min_trades=min_trades)
+    ranked = sorted(scored.items(), key=lambda kv: kv[1]["dsr"], reverse=True)
+    week_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
     lib = get_skill_library()
     async with db.session() as s:
         for rank, (skill_id, st) in enumerate(ranked):
-            # Only archive a skill if (a) we have >= min_trades closed trades AND
-            # (b) the cumulative pnl is negative AND (c) Sharpe is < 0. This
-            # avoids pruning a skill on a small sample of mostly-flat trades.
-            archived = (
-                st["trades"] >= min_trades
-                and st["pnl_usd"] < 0
-                and st["sharpe"] < 0
-            )
+            wins, pnl = wins_pnl.get(skill_id, (0, 0.0))
+            st["wins"], st["pnl_usd"] = wins, pnl  # enrich the returned report
             s.add(
                 SkillStatRow(
                     week_starting=week_start,
                     skill_id=skill_id,
                     trades=st["trades"],
-                    wins=st["wins"],
-                    pnl_usd=st["pnl_usd"],
+                    wins=wins,
+                    pnl_usd=pnl,
                     sharpe=st["sharpe"],
+                    dsr=st["dsr"],
                     rank=rank,
-                    archived=archived,
+                    archived=st["archived"],
                 )
             )
-            if archived:
+            if st["archived"]:
                 lib.archive(skill_id)
-                log.info("skill_archived", skill_id=skill_id, sharpe=st["sharpe"])
+                log.info("skill_archived", skill_id=skill_id, dsr=st["dsr"], sharpe=st["sharpe"])
         await s.commit()
 
-    log.info("weekly_rerank_done", n_skills=len(stats))
-    return stats
+    log.info("weekly_rerank_done", n_skills=len(scored))
+    return scored

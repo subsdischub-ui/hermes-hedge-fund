@@ -62,6 +62,17 @@ sizing:
   per_trade_floor_pct: 0.25      # never size smaller than this in basis points*100
   min_trades_before_trusting_kelly: 100
 
+fees:
+  # Hyperliquid taker/maker fees in basis points (mid-2026). The paper exchange
+  # mirrors the taker fee for the stage's instrument so the measured Sharpe /
+  # profit-factor reflect REAL net-of-fee performance — the stage gates depend on
+  # these numbers, so under-charging here would open the gates on a fictional edge.
+  spot_taker: 7
+  spot_maker: 4
+  perp_taker: 4.5
+  perp_maker: 1.5
+  slippage_bps: 3        # paper market-impact assumption (per side)
+
 loops:
   # APScheduler cron specs in Hermès TZ.
   market_tick:      "*/5 * * * *"        # main decision loop, every 5 minutes

@@ -26,6 +26,7 @@ dependencies = [
 
     # Memory
     "sqlalchemy>=2.0",
+    "greenlet>=3.1",       # required by SQLAlchemy async; not auto-installed on macOS arm64
     "aiosqlite>=0.20",
     "chromadb>=0.5",
     "sentence-transformers>=3.3",
@@ -35,6 +36,7 @@ dependencies = [
     "hyperliquid-python-sdk>=0.7",
     "pandas>=2.2",
     "numpy>=2.0",
+    "scipy>=1.14",         # Probabilistic/Deflated Sharpe (learning/stats.py)
     "pandas-ta>=0.3.14b",
 
     # Modelling (TRM runs on CPU inside the container)

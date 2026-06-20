@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 
 from sqlalchemy import JSON, DateTime, Float, Integer, String, Text
@@ -17,7 +17,7 @@ class Base(DeclarativeBase):
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class JournalRow(Base):
@@ -60,6 +60,7 @@ class SkillStatRow(Base):
     wins: Mapped[int] = mapped_column(Integer, default=0)
     pnl_usd: Mapped[float] = mapped_column(Float, default=0.0)
     sharpe: Mapped[float] = mapped_column(Float, default=0.0)
+    dsr: Mapped[float] = mapped_column(Float, default=0.0)  # Deflated Sharpe (ranking/archival basis)
     rank: Mapped[int] = mapped_column(Integer, default=0)
     archived: Mapped[bool] = mapped_column(default=False)
 
@@ -84,6 +85,19 @@ class Database:
     async def init(self) -> None:
         async with self.engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
+            # Lightweight additive migration: create_all never ALTERs existing
+            # tables, so a DB created before a column was added (e.g. skill_stats.dsr
+            # on an already-deployed volume) would miss it. Add any missing columns.
+            existing = {
+                row[1]
+                for row in (
+                    await conn.exec_driver_sql("PRAGMA table_info(skill_stats)")
+                ).all()
+            }
+            if existing and "dsr" not in existing:
+                await conn.exec_driver_sql(
+                    "ALTER TABLE skill_stats ADD COLUMN dsr FLOAT DEFAULT 0.0"
+                )
 
     async def dispose(self) -> None:
         await self.engine.dispose()

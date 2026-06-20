@@ -60,6 +60,32 @@ async def test_paper_roundtrip_preserves_equity(tmp_data_dir: Path):
 
 
 @pytest.mark.asyncio
+async def test_paper_fees_are_injectable_and_applied(tmp_data_dir: Path):
+    """Fees must be configurable (so paper mirrors the real venue, e.g. Hyperliquid
+    spot taker = 7 bps, not the old hardcoded 5). With slippage isolated to 0, a
+    flat buy+sell round-trip costs EXACTLY two taker fees on the notional."""
+    state_path = tmp_data_dir / "paper_fee_inject.json"
+    if state_path.exists():
+        state_path.unlink()
+    px = PaperExchange(
+        state_path=state_path,
+        starting_equity=100.0,
+        venue_for_prices="kraken",
+        fee_bps=7,
+        slippage_bps=0,
+    )
+    px.market = _StubMarket()  # type: ignore[assignment]
+
+    eq0 = await px.equity_usd()
+    await px.place_order(Order(symbol="BTC/USDC", side="BUY", qty=0.001))   # $50 notional
+    await px.close_position("BTC/USDC", reason="manual")
+    eq1 = await px.equity_usd()
+
+    # 50 * 0.0007 = 0.035 per side, two sides = 0.07, no slippage.
+    assert (eq0 - eq1) == pytest.approx(0.07, abs=1e-6)
+
+
+@pytest.mark.asyncio
 async def test_paper_flat_roundtrip_loses_only_fees_and_slippage(tmp_data_dir: Path):
     """Buy then immediately sell at the same mid — final equity should only be
     short by fees + 2x slippage, NEVER by the notional."""
