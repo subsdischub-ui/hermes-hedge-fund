@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -78,7 +78,7 @@ class TradeJournal:
             row.fee_usd = fee_usd
             row.exit_reason = exit_reason
             row.reflection = reflection
-            row.closed_at = datetime.now(timezone.utc)
+            row.closed_at = datetime.now(UTC)
             await s.commit()
 
     async def set_reflection(self, trade_id: int, reflection: str) -> None:
@@ -111,6 +111,26 @@ class TradeJournal:
             "avg_win_loss_ratio": ratio,
             "pnl_usd": sum(r.pnl_usd or 0 for r in rows),
         }
+
+    async def confidence_outcomes(self) -> tuple[list[float], list[int]]:
+        """Closed-trade (confidence, win) pairs for confidence calibration.
+        Only rows with a recorded confidence > 0 are returned; win = pnl_usd > 0."""
+        db = get_db()
+        async with db.session() as s:
+            rows = (
+                await s.execute(
+                    select(JournalRow).where(
+                        JournalRow.closed_at.is_not(None),
+                        JournalRow.pnl_usd.is_not(None),
+                    )
+                )
+            ).scalars().all()
+        pairs = [
+            (float(r.confidence), 1 if (r.pnl_usd or 0) > 0 else 0)
+            for r in rows
+            if (r.confidence or 0) > 0
+        ]
+        return [c for c, _ in pairs], [o for _, o in pairs]
 
     async def recent_closed(self, since: datetime) -> list[JournalRow]:
         db = get_db()

@@ -25,6 +25,7 @@ class HermesState:
     trader_proposal: dict[str, Any] = field(default_factory=dict)
     risk_decision: dict[str, Any] = field(default_factory=dict)
     trm_refinement: dict[str, Any] = field(default_factory=dict)
+    confidence_calibration: dict[str, Any] = field(default_factory=dict)
 
     # outcome
     executed: bool = False

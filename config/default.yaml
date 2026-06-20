@@ -75,7 +75,12 @@ fees:
 
 loops:
   # APScheduler cron specs in Hermès TZ.
-  market_tick:      "*/5 * * * *"        # main decision loop, every 5 minutes
+  # Decision cadence is aligned to the 1h bars the orchestrator uses: polling every
+  # 5 min on a 1h candle produced up to 12 redundant decisions per bar (pure churn
+  # + fees) and could not keep up with a ~270s tick × 3 symbols. Hourly removes the
+  # overtrading and leaves ample headroom. Stop protection still runs every 30s
+  # (stop_watcher), so risk control is unaffected by the slower decision loop.
+  market_tick:      "0 * * * *"          # main decision loop, top of every hour
   per_trade_close:  "event"
   nightly_reflect:  "0 23 * * *"
   weekly_rerank:    "0 22 * * 0"

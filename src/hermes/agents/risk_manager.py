@@ -9,6 +9,7 @@ from hermes.graph.state import HermesState
 from hermes.logging_setup import get_logger
 from hermes.memory.journal import TradeJournal
 from hermes.risk import get_risk_engine
+from hermes.risk.calibration import get_confidence_calibrator
 from hermes.risk.guardrails import TradeProposal
 from hermes.trm import get_trm
 from hermes.trm.encoder import Action, ActionCodec, MarketStateEncoder
@@ -84,6 +85,28 @@ async def run(state: HermesState) -> HermesState:
                 "confidence": 0.0,
             }
             proposal.confidence = 0.0
+
+    # --- confidence calibration: honest P(win) before the gate + Kelly sizing ---
+    # The LLM is systematically over-confident; map its confidence through an
+    # isotonic calibrator fitted on realized outcomes so the SAME value that gates
+    # and sizes the trade reflects the true historical hit-rate. Identity (no-op)
+    # until enough closed trades exist, so it can only ever lower over-confidence.
+    if proposal.side != "HOLD":
+        cal = await get_confidence_calibrator()
+        raw_conf = proposal.confidence
+        proposal.confidence = cal.calibrate(raw_conf)
+        state.confidence_calibration = {
+            "raw": raw_conf,
+            "calibrated": proposal.confidence,
+            "fitted": cal.is_fitted,
+        }
+        if cal.is_fitted:
+            log.info(
+                "confidence_calibrated",
+                symbol=proposal.symbol,
+                raw=round(raw_conf, 4),
+                calibrated=round(proposal.confidence, 4),
+            )
 
     # --- deterministic risk engine ---
     engine = get_risk_engine()

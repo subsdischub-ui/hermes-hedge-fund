@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from hermes.llm import get_router
 from hermes.logging_setup import get_logger
 from hermes.memory.journal import TradeJournal
 from hermes.memory.lessons import LessonsStore
+from hermes.risk.calibration import reset_confidence_calibrator
 
 log = get_logger(__name__)
 
@@ -24,8 +25,11 @@ Return an empty list if the day's signal is too noisy to extract a lesson.
 
 
 async def run_nightly_reflection() -> int:
+    # Refit the confidence calibrator on the latest realized trade outcomes so
+    # tomorrow's sizing/gating uses an up-to-date P(win) mapping.
+    reset_confidence_calibrator()
     journal = TradeJournal()
-    since = datetime.now(timezone.utc) - timedelta(hours=24)
+    since = datetime.now(UTC) - timedelta(hours=24)
     rows = await journal.recent_closed(since=since)
     if not rows:
         log.info("nightly_no_trades")
@@ -67,12 +71,12 @@ async def run_nightly_reflection() -> int:
     store = LessonsStore()
     ids = [r.id for r in rows]
     added = 0
-    for l in lessons:
+    for lesson in lessons:
         await store.add(
-            text=l["text"],
-            tags=list(l.get("tags", [])),
+            text=lesson["text"],
+            tags=list(lesson.get("tags", [])),
             source_trade_ids=ids,
-            score=float(l.get("score", 0.0)),
+            score=float(lesson.get("score", 0.0)),
         )
         added += 1
     log.info("nightly_lessons_added", count=added, trades=len(rows))
