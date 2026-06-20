@@ -19,6 +19,12 @@ services:
       TS_AUTHKEY: ${TS_AUTHKEY}
       TS_EXTRA_ARGS: --advertise-tags=tag:hermes
       TS_STATE_DIR: /var/lib/tailscale
+      # Kernel networking (NOT userspace): creates a real tailscale0 interface in
+      # this namespace so hermes-agent (network_mode: service:hermes-ts) can ROUTE
+      # to tailnet IPs (the Mac LLM at :8080). Requires /dev/net/tun + NET_ADMIN
+      # (provided below). Without this the image defaults to userspace mode and
+      # the agent gets ConnectTimeout on every LLM call.
+      TS_USERSPACE: "false"
     volumes:
       - hermes-ts-state:/var/lib/tailscale
       - /dev/net/tun:/dev/net/tun
