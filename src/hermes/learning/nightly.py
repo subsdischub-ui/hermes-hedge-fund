@@ -9,6 +9,7 @@ from hermes.logging_setup import get_logger
 from hermes.memory.journal import TradeJournal
 from hermes.memory.lessons import LessonsStore
 from hermes.risk.calibration import reset_confidence_calibrator
+from hermes.risk.meta_labeling import reset_meta_labeler
 
 log = get_logger(__name__)
 
@@ -25,9 +26,10 @@ Return an empty list if the day's signal is too noisy to extract a lesson.
 
 
 async def run_nightly_reflection() -> int:
-    # Refit the confidence calibrator on the latest realized trade outcomes so
-    # tomorrow's sizing/gating uses an up-to-date P(win) mapping.
+    # Refit the confidence calibrator + meta-labeler on the latest realized
+    # outcomes so tomorrow's sizing/gating and shadow scoring are up to date.
     reset_confidence_calibrator()
+    reset_meta_labeler()
     journal = TradeJournal()
     since = datetime.now(UTC) - timedelta(hours=24)
     rows = await journal.recent_closed(since=since)

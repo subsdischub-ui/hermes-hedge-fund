@@ -11,6 +11,7 @@ from hermes.memory.journal import TradeJournal
 from hermes.risk import get_risk_engine
 from hermes.risk.calibration import get_confidence_calibrator
 from hermes.risk.guardrails import TradeProposal
+from hermes.risk.meta_labeling import get_meta_labeler, meta_features
 from hermes.risk.volforecast import har_rv_forecast, vol_target_scale
 from hermes.settings import get_settings
 from hermes.trm import get_trm
@@ -126,6 +127,18 @@ async def run(state: HermesState) -> HermesState:
             }
         except Exception as e:
             log.warning("vol_forecast_failed", error=str(e), symbol=proposal.symbol)
+
+    # --- meta-labeling (SHADOW: logged, NEVER gates a trade) ---
+    if side != "HOLD":
+        try:
+            ml = await get_meta_labeler()
+            raw_conf = float(proposal_d.get("confidence", 0.0))
+            p_win = ml.predict_proba(meta_features(state.snapshot, raw_conf))
+            state.meta_label = {"p_win": p_win, "fitted": ml.is_fitted}
+            if p_win is not None:
+                log.info("meta_label_shadow", symbol=proposal.symbol, p_win=round(p_win, 4))
+        except Exception as e:
+            log.warning("meta_label_failed", error=str(e), symbol=proposal.symbol)
 
     # --- deterministic risk engine ---
     engine = get_risk_engine()

@@ -14,6 +14,7 @@ class HermesState:
     # populated by analyst nodes
     ohlcv: Any = None              # pd.DataFrame
     snapshot: dict[str, Any] = field(default_factory=dict)
+    regime: dict[str, Any] = field(default_factory=dict)
     news: list[dict] = field(default_factory=list)
     sentiment: dict[str, Any] = field(default_factory=dict)
     skill_signals: list[dict] = field(default_factory=list)
@@ -27,6 +28,7 @@ class HermesState:
     trm_refinement: dict[str, Any] = field(default_factory=dict)
     confidence_calibration: dict[str, Any] = field(default_factory=dict)
     vol_forecast: dict[str, Any] = field(default_factory=dict)
+    meta_label: dict[str, Any] = field(default_factory=dict)
 
     # outcome
     executed: bool = False
