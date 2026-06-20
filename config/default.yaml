@@ -20,7 +20,9 @@ stages:
 
   stage_1_micro:
     venue: hyperliquid
-    instruments: spot
+    instruments: perp        # Hyperliquid has no native BTC/ETH/SOL spot — perps only
+    leverage_initial: 1      # 1x = no leverage (perp behaves ~spot economically)
+    leverage_max: 1
     per_trade_risk_cap_pct: 0.5
     max_open_positions: 3
     daily_loss_kill_pct: 2.0
@@ -31,7 +33,9 @@ stages:
 
   stage_2_normal:
     venue: hyperliquid
-    instruments: spot
+    instruments: perp        # perps only on Hyperliquid; still 1x at the "normal" stage
+    leverage_initial: 1
+    leverage_max: 1
     per_trade_risk_cap_pct: 2.0
     max_open_positions: 5
     daily_loss_kill_pct: 4.0

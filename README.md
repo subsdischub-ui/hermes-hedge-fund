@@ -107,8 +107,8 @@ position_size_usd = (equity * risk_pct) / (k * ATR(14) / price)
 | Stage | Venue | Mode | Per-trade cap | Max open | Daily kill |
 |---|---|---|---|---|---|
 | 0 — paper | paper | spot | n/a | 3 | n/a |
-| 1 — micro | Hyperliquid | spot | 0.5% | 3 | 2% |
-| 2 — normal | Hyperliquid | spot | 2.0% | 5 | 4% |
+| 1 — micro | Hyperliquid | perp 1x | 0.5% | 3 | 2% |
+| 2 — normal | Hyperliquid | perp 1x | 2.0% | 5 | 4% |
 | 3 — perps | Hyperliquid | perps 1x→2x | 2.0% | 5 | 5% |
 
 Gates (see `config/default.yaml`) must be met before the operator may advance.

@@ -18,7 +18,8 @@ raise; callers must not interpret zero-fill as "executed".
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+import hashlib
+from datetime import UTC, datetime
 from typing import Any
 
 from hermes.execution.base import Exchange, Fill, Order, Position
@@ -32,6 +33,38 @@ class HyperliquidError(RuntimeError):
     pass
 
 
+# --- pure helpers (unit-tested without the SDK) -----------------------------
+def derive_cloid(client_id: str) -> str:
+    """Deterministic 128-bit client order id (0x + 32 hex) from our client_id, so
+    a network retry of the same logical order reuses the cloid and the exchange
+    deduplicates it instead of opening a second position."""
+    return "0x" + hashlib.sha256(str(client_id).encode()).hexdigest()[:32]
+
+
+def build_tpsl_orders(
+    coin: str, is_long: bool, qty: float, stop_px: float | None, tp_px: float | None
+) -> list[dict[str, Any]]:
+    """Reduce-only stop-loss / take-profit TRIGGER orders that close the position
+    on the exchange (so a live position is protected even if the agent dies). A
+    long is closed by SELLs, a short by BUYs. Skips legs with no price."""
+    close_is_buy = not is_long
+    out: list[dict[str, Any]] = []
+    for px, tpsl in ((stop_px, "sl"), (tp_px, "tp")):
+        if px is None:
+            continue
+        out.append(
+            {
+                "coin": coin,
+                "is_buy": close_is_buy,
+                "sz": float(qty),
+                "limit_px": float(px),
+                "reduce_only": True,
+                "order_type": {"trigger": {"triggerPx": float(px), "isMarket": True, "tpsl": tpsl}},
+            }
+        )
+    return out
+
+
 class HyperliquidExchange(Exchange):
     name = "hyperliquid"
     DEFAULT_SLIPPAGE = 0.005   # 0.5% — tight enough to avoid bad fills on majors
@@ -41,15 +74,17 @@ class HyperliquidExchange(Exchange):
         secret = s.hl_secret_key.get_secret_value() if hasattr(s.hl_secret_key, "get_secret_value") else str(s.hl_secret_key)
         if not s.hl_account_address or not secret:
             raise RuntimeError("Hyperliquid credentials missing — refusing live mode.")
-        from hyperliquid.info import Info  # type: ignore
-        from hyperliquid.exchange import Exchange as HLExchange  # type: ignore
         from eth_account import Account  # type: ignore
+        from hyperliquid.exchange import Exchange as HLExchange  # type: ignore
+        from hyperliquid.info import Info  # type: ignore
 
         base_url = "https://api.hyperliquid-testnet.xyz" if s.hl_testnet else "https://api.hyperliquid.xyz"
         wallet = Account.from_key(secret)
         self.info = Info(base_url, skip_ws=True)
         self.exchange = HLExchange(wallet, base_url, account_address=s.hl_account_address)
         self.address = s.hl_account_address
+        # Stage leverage (1x at micro/normal -> perps behave economically like spot).
+        self._leverage = int((s.stage_config or {}).get("leverage_initial", 1))
 
     # --- sync->async wrapper ------------------------------------------------
     async def _to_thread(self, fn, *args, **kwargs):
@@ -75,7 +110,7 @@ class HyperliquidExchange(Exchange):
                     entry_price=float(p["entryPx"]),
                     stop_price=None,
                     take_profit=None,
-                    opened_at=datetime.now(timezone.utc),
+                    opened_at=datetime.now(UTC),
                     unrealized_pnl_usd=float(p.get("unrealizedPnl", 0.0)),
                 )
             )
@@ -106,17 +141,41 @@ class HyperliquidExchange(Exchange):
             raise HyperliquidError(f"hl zero fill: {st!r}")
         return filled
 
+    def _cloid(self, order: Order):
+        """Best-effort Cloid object from our deterministic id; None if the SDK
+        version doesn't expose Cloid (we then fall back to no idempotency key)."""
+        hexid = derive_cloid(order.client_id or f"{order.symbol}-{order.qty}-{order.side}")
+        try:
+            from hyperliquid.utils.types import Cloid  # type: ignore
+
+            return Cloid.from_str(hexid)
+        except Exception:
+            try:
+                from hyperliquid.utils.signing import Cloid  # type: ignore
+
+                return Cloid.from_str(hexid)
+            except Exception:
+                log.warning("hl_cloid_unavailable")
+                return None
+
     async def place_order(self, order: Order) -> Fill:
         coin = order.symbol.split("/")[0]
         is_buy = order.side == "BUY"
+        # Enforce stage leverage (1x = no leverage) before opening.
+        try:
+            await self._to_thread(self.exchange.update_leverage, self._leverage, coin)
+        except Exception as e:
+            log.warning("hl_update_leverage_failed", coin=coin, error=str(e))
+
+        cloid = self._cloid(order)
         result = await self._to_thread(
             self.exchange.market_open,
-            coin, is_buy, order.qty, None, self.DEFAULT_SLIPPAGE,
+            coin, is_buy, order.qty, None, self.DEFAULT_SLIPPAGE, cloid,
         )
         # Redact the SDK echo down to the bits we need before logging.
         log.info("hl_order_status", status=result.get("status"), symbol=order.symbol, side=order.side)
         filled = self._extract_filled(result)
-        return Fill(
+        fill = Fill(
             order_id=str(filled.get("oid", order.client_id)),
             symbol=order.symbol,
             side=order.side,
@@ -124,6 +183,18 @@ class HyperliquidExchange(Exchange):
             price=float(filled.get("avgPx", 0.0)),
             fee_usd=float(filled.get("fee", 0.0)),
         )
+        # Attach native reduce-only stop/TP triggers so the position is protected
+        # on-exchange even if the agent, the Mac LLM or Tailscale goes down.
+        tpsl = build_tpsl_orders(
+            coin, is_long=is_buy, qty=float(filled["totalSz"]),
+            stop_px=order.stop_price, tp_px=order.take_profit,
+        )
+        if tpsl:
+            try:
+                await self._to_thread(self.exchange.bulk_orders, tpsl)
+            except Exception as e:
+                log.warning("hl_tpsl_attach_failed", symbol=order.symbol, error=str(e))
+        return fill
 
     async def close_position(self, symbol: str, reason: str) -> Fill | None:
         coin = symbol.split("/")[0]
