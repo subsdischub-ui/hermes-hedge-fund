@@ -24,14 +24,14 @@ RUN git clone https://github.com/SamsungSAILMontreal/TinyRecursiveModels.git /op
  && rm -rf /opt/trm/.git
 
 COPY pyproject.toml ./
-# uv lock + sync in one cached layer.
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv venv /opt/venv && uv pip install --python /opt/venv/bin/python -e .
-
 COPY src ./src
 COPY config ./config
+# Single editable install. src/ MUST exist before this step: pyproject declares
+# setuptools src-layout (packages.find where=["src"]), so an editable install
+# with only pyproject.toml present fails with "egg_base option: 'src' does not
+# exist". The uv cache mount still caches wheel downloads across rebuilds.
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --python /opt/venv/bin/python -e .
+    uv venv /opt/venv && uv pip install --python /opt/venv/bin/python -e .
 
 # --------------------------- runtime --------------------------------------
 FROM python:${PYTHON_VERSION}-slim AS runtime
