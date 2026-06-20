@@ -2,7 +2,7 @@
 # Dokploy UI (Environment tab):
 #   HERMES_DOMAIN_API           (e.g. api.hermes.example.com)
 #   TS_AUTHKEY                  (ephemeral, tagged tailscale auth key)
-#   LLM_PRIMARY_BASE_URL=http://hermes-mac:11434/v1
+#   LLM_PRIMARY_BASE_URL=http://<mac-tailnet-ip>:8080/v1   (llama.cpp llama-server)
 #   ...rest of .env.example
 #
 # The 'dokploy-network' must be created externally (Dokploy creates it).
@@ -11,7 +11,7 @@ services:
 
   # --------- Tailscale sidecar: joins your Mac's tailnet. -----------------
   # hermes-agent shares this container's network namespace so the LLM call
-  # to http://hermes-mac:11434 resolves over Tailscale MagicDNS.
+  # to the Mac's llama-server (tailnet IP :8080) is reachable over Tailscale.
   hermes-ts:
     image: tailscale/tailscale:latest
     hostname: ${TS_HOSTNAME:-hermes-agent}
@@ -25,6 +25,17 @@ services:
     cap_add: [NET_ADMIN, NET_RAW]
     restart: unless-stopped
     networks: [dokploy-network]
+    # Traefik labels live on THIS sidecar (not hermes-agent): hermes-agent uses
+    # network_mode: service:hermes-ts, so it has no own IP on dokploy-network.
+    # uvicorn (hermes-agent) listens on :8000 inside this shared namespace, so
+    # Traefik must resolve the backend via hermes-ts's IP.
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.hermes-api.rule=Host(`${HERMES_DOMAIN_API}`)
+      - traefik.http.routers.hermes-api.entrypoints=websecure
+      - traefik.http.routers.hermes-api.tls.certresolver=letsencrypt
+      - traefik.http.services.hermes-api.loadbalancer.server.port=8000
 
   # --------- Hermès agent (main service) ----------------------------------
   hermes-agent:
@@ -51,13 +62,6 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=dokploy-network
-      - traefik.http.routers.hermes-api.rule=Host(`${HERMES_DOMAIN_API}`)
-      - traefik.http.routers.hermes-api.entrypoints=websecure
-      - traefik.http.routers.hermes-api.tls.certresolver=letsencrypt
-      - traefik.http.services.hermes-api.loadbalancer.server.port=8000
 
   hermes-redis:
     image: redis:7-alpine
