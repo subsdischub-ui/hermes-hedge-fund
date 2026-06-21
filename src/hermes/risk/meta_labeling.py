@@ -90,8 +90,28 @@ async def get_meta_labeler(min_samples: int = 50) -> MetaLabeler:
         ).scalars().all()
     feats = [meta_features(r.market_state or {}, float(r.confidence or 0.0)) for r in rows]
     outs = [1 if (r.pnl_usd or 0) > 0 else 0 for r in rows]
-    _CACHE = MetaLabeler(min_samples=min_samples).fit(feats, outs)
+    ml = MetaLabeler(min_samples=min_samples).fit(feats, outs)
+    if not ml.is_fitted:
+        ml = _load_bootstrapped() or ml
+    _CACHE = ml
     return _CACHE
+
+
+def _load_bootstrapped() -> MetaLabeler | None:
+    """Load the backtest-bootstrapped meta-labeler if present. SECURITY: pickle
+    produced by our own `hermes backtest` into the private /data volume (trusted,
+    self-produced — never an external download)."""
+    import joblib
+
+    from hermes.settings import get_settings
+
+    p = get_settings().data_dir / "models" / "meta_labeler.pkl"
+    if p.exists():
+        try:
+            return joblib.load(p)
+        except Exception:
+            return None
+    return None
 
 
 def reset_meta_labeler() -> None:

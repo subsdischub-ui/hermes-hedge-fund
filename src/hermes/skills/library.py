@@ -12,10 +12,10 @@ SkillStatRow — see `_reload_archival_from_db`.
 
 from __future__ import annotations
 
-import asyncio
+from collections.abc import Callable
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Callable, Literal
+from typing import Literal
 
 import numpy as np
 import pandas as pd
@@ -201,12 +201,7 @@ class SkillLibrary:
 
 @lru_cache(maxsize=1)
 def get_skill_library() -> SkillLibrary:
-    lib = SkillLibrary(_REGISTRY)
-    # Best-effort lazy reload; safe to skip if no event loop / no DB yet.
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            loop.create_task(lib.reload_archival_from_db())
-    except RuntimeError:
-        pass
-    return lib
+    # Archival state is rehydrated explicitly by the API lifespan via
+    # reload_archival_from_db(); constructing the library is intentionally cheap
+    # and side-effect-free so it is safe to call from sync contexts (e.g. backtest).
+    return SkillLibrary(_REGISTRY)

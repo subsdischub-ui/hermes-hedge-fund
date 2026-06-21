@@ -55,17 +55,38 @@ class ConfidenceCalibrator:
 _CACHE: ConfidenceCalibrator | None = None
 
 
+def _load_bootstrapped() -> ConfidenceCalibrator | None:
+    """Load the backtest-bootstrapped calibrator if present. SECURITY: this pickle
+    is produced by our own `hermes backtest` into the private /data volume — a
+    trusted, self-produced source, never an external download."""
+    import joblib
+
+    from hermes.settings import get_settings
+
+    p = get_settings().data_dir / "models" / "calibrator.pkl"
+    if p.exists():
+        try:
+            return joblib.load(p)
+        except Exception:
+            return None
+    return None
+
+
 async def get_confidence_calibrator(min_samples: int = 30) -> ConfidenceCalibrator:
     """Lazily fit (and cache) a calibrator from the journal's (confidence, win)
-    history. Identity until min_samples two-class trades exist. Cached for the
-    process; call reset_confidence_calibrator() (the nightly job does) to refit."""
+    history. Falls back to the backtest-bootstrapped model while the journal is too
+    thin, then takes over once enough live trades exist. Cached for the process;
+    call reset_confidence_calibrator() (the nightly job does) to refit."""
     global _CACHE
     if _CACHE is not None:
         return _CACHE
     from hermes.memory.journal import TradeJournal
 
     confs, outs = await TradeJournal().confidence_outcomes()
-    _CACHE = ConfidenceCalibrator(min_samples=min_samples).fit(confs, outs)
+    cal = ConfidenceCalibrator(min_samples=min_samples).fit(confs, outs)
+    if not cal.is_fitted:
+        cal = _load_bootstrapped() or cal
+    _CACHE = cal
     return _CACHE
 
 
