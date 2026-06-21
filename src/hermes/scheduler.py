@@ -33,6 +33,28 @@ def build_scheduler() -> AsyncIOScheduler:
             except Exception as e:
                 log.exception("market_tick_failed", symbol=sym, error=str(e))
 
+    async def status_heartbeat() -> None:
+        """Periodic one-line health/PnL summary so the agent's rhythm is visible
+        in the logs and any external watchdog can scrape it."""
+        try:
+            from hermes.execution import get_exchange
+            from hermes.memory.journal import TradeJournal
+
+            ex = get_exchange()
+            eq = await ex.equity_usd()
+            pos = await ex.open_positions()
+            st = await TradeJournal().stats()
+            log.info(
+                "heartbeat",
+                equity_usd=round(eq, 2),
+                open_positions=len(pos),
+                closed_trades=st["count"],
+                win_rate=st["win_rate"],
+                realized_pnl_usd=round(st["pnl_usd"], 2),
+            )
+        except Exception as e:
+            log.warning("heartbeat_failed", error=str(e))
+
     sched.add_job(
         market_tick,
         CronTrigger.from_crontab(loops.get("market_tick", "*/5 * * * *"), timezone=s.tz),
@@ -44,6 +66,13 @@ def build_scheduler() -> AsyncIOScheduler:
         stop_tick,
         IntervalTrigger(seconds=30),
         id="stop_watcher",
+        max_instances=1,
+        coalesce=True,
+    )
+    sched.add_job(
+        status_heartbeat,
+        CronTrigger.from_crontab(loops.get("heartbeat", "0 * * * *"), timezone=s.tz),
+        id="status_heartbeat",
         max_instances=1,
         coalesce=True,
     )
