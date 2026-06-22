@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Narrative auto-documentation ("document after committing") — VERSIONED hook.
+# Active only where `git config core.hooksPath .githooks` has been set (see
+# .githooks/README.md). Thin launcher: decide whether to run, then fire the
+# worker DETACHED so the commit (yours, mine, or the autonomous committer's)
+# never blocks on the LLM call. See .githooks/histoire-worker.sh.
+set -euo pipefail
+
+root="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$root"
+
+# Loop guard: skip commits that touched ONLY documentation files, so the
+# narrative update this hook produces can't re-trigger itself endlessly.
+nondoc="$(git diff-tree --no-commit-id --name-only -r HEAD 2>/dev/null \
+          | grep -vxE 'ETAT_DES_LIEUX\.md|CHANGELOG\.md' || true)"
+[ -z "$nondoc" ] && exit 0
+
+hookdir="$(cd "$(dirname "$0")" && pwd)"
+worker="$hookdir/histoire-worker.sh"
+[ -x "$worker" ] || exit 0
+
+# Detach completely: closed fds + nohup so git returns immediately.
+nohup "$worker" >/dev/null 2>&1 &
+exit 0
