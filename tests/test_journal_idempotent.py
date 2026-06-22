@@ -3,7 +3,7 @@ original timestamp), and set_reflection must not touch closed_at/pnl."""
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -21,7 +21,7 @@ async def test_close_is_idempotent_and_set_reflection_safe():
             side="BUY",
             qty=0.001,
             entry_price=50_000.0,
-            opened_at=datetime.now(timezone.utc),
+            opened_at=datetime.now(UTC),
             stage="stage_0_paper",
         )
     )

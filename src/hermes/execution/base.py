@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal, Protocol
 from uuid import uuid4
 
@@ -34,7 +34,7 @@ class Fill:
     qty: float
     price: float
     fee_usd: float
-    ts: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    ts: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass

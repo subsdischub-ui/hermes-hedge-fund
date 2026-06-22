@@ -70,7 +70,7 @@ def _applies_to(skill: Skill, symbol: str | None) -> bool:
 
 
 def _atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
-    h, l, c = df["high"], df["low"], df["close"]  # noqa: E741
+    h, l, c = df["high"], df["low"], df["close"]
     tr = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)
     return tr.rolling(n).mean()
 
@@ -113,7 +113,7 @@ def mean_reversion_atr(df: pd.DataFrame) -> SkillSignal:
 
 
 def breakout_vol_expansion(df: pd.DataFrame) -> SkillSignal:
-    h, l, c = df["high"], df["low"], df["close"]  # noqa: E741
+    h, l, c = df["high"], df["low"], df["close"]
     hh = h.rolling(20).max().shift(1)
     ll = l.rolling(20).min().shift(1)
     atr = _atr(df)

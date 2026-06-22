@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from hermes.llm import get_router
+from hermes.logging_setup import get_logger
 from hermes.memory.journal import TradeJournal
 from hermes.memory.store import JournalRow, get_db
-from hermes.logging_setup import get_logger
 
 log = get_logger(__name__)
 

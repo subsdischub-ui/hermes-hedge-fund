@@ -2,12 +2,12 @@ import numpy as np
 import pandas as pd
 
 from hermes.trm.encoder import (
-    Action,
-    ActionCodec,
-    MarketStateEncoder,
     N_SIZE_BUCKETS,
     STATE_BASE,
     VOCAB_SIZE,
+    Action,
+    ActionCodec,
+    MarketStateEncoder,
 )
 
 

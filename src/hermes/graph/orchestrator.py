@@ -10,8 +10,15 @@ from __future__ import annotations
 
 import asyncio
 
-from hermes.agents import market_analyst, news_analyst, portfolio_manager, researcher
-from hermes.agents import risk_manager, sentiment_analyst, trader
+from hermes.agents import (
+    market_analyst,
+    news_analyst,
+    portfolio_manager,
+    researcher,
+    risk_manager,
+    sentiment_analyst,
+    trader,
+)
 from hermes.graph.state import HermesState
 from hermes.logging_setup import get_logger
 

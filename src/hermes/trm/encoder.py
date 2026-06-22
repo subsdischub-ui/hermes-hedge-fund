@@ -87,7 +87,7 @@ class MarketStateEncoder:
             raise ValueError(f"need at least {min_required} bars, got {len(df)}")
         c = df["close"].astype(float)
         v = df["volume"].astype(float)
-        h, l = df["high"].astype(float), df["low"].astype(float)  # noqa: E741
+        h, l = df["high"].astype(float), df["low"].astype(float)
 
         tr = pd.concat(
             [(h - l), (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1

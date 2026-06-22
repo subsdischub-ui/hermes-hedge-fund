@@ -25,10 +25,10 @@ import numpy as np
 from hermes.logging_setup import get_logger
 from hermes.settings import get_settings
 from hermes.trm.encoder import (
-    ActionCodec,
-    MarketStateEncoder,
     PAD_ID,
     VOCAB_SIZE,
+    ActionCodec,
+    MarketStateEncoder,
 )
 
 log = get_logger(__name__)

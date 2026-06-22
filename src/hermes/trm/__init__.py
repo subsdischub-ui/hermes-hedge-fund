@@ -1,10 +1,10 @@
-from hermes.trm.encoder import MarketStateEncoder, ActionCodec
-from hermes.trm.verifier import TRMVerifier, NullTRMVerifier, get_trm
+from hermes.trm.encoder import ActionCodec, MarketStateEncoder
+from hermes.trm.verifier import NullTRMVerifier, TRMVerifier, get_trm
 
 __all__ = [
-    "MarketStateEncoder",
     "ActionCodec",
-    "TRMVerifier",
+    "MarketStateEncoder",
     "NullTRMVerifier",
+    "TRMVerifier",
     "get_trm",
 ]

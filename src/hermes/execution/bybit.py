@@ -11,6 +11,8 @@ returns positions whose symbol matches an open journal row.
 
 from __future__ import annotations
 
+from datetime import UTC
+
 import ccxt.async_support as ccxt
 from sqlalchemy import select
 
@@ -48,7 +50,7 @@ class BybitExchange(Exchange):
         Returns the journal rows that still have non-zero base-asset balance
         on the exchange. Pre-existing balances NOT in the journal are ignored.
         """
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from hermes.memory.store import JournalRow, get_db
 
@@ -79,7 +81,7 @@ class BybitExchange(Exchange):
                     entry_price=float(row.entry_price),
                     stop_price=None,
                     take_profit=None,
-                    opened_at=row.opened_at or datetime.now(timezone.utc),
+                    opened_at=row.opened_at or datetime.now(UTC),
                     unrealized_pnl_usd=(px - float(row.entry_price)) * float(row.qty),
                     skill_id=row.skill_id or "",
                     thesis=row.thesis or "",

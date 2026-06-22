@@ -54,7 +54,7 @@ def _event_key(df: pd.DataFrame, t: int, fallback: int) -> int:
 
 
 def _snapshot(df: pd.DataFrame, regime: dict) -> dict:
-    h, l, c = df["high"], df["low"], df["close"]  # noqa: E741
+    h, l, c = df["high"], df["low"], df["close"]
     tr = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)
     atr = float(tr.rolling(14).mean().iloc[-1])
     last = float(c.iloc[-1])

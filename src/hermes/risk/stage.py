@@ -12,7 +12,6 @@ from typing import Any
 
 from hermes.settings import get_settings
 
-
 STAGES_ORDER = ["stage_0_paper", "stage_1_micro", "stage_2_normal", "stage_3_perps"]
 
 

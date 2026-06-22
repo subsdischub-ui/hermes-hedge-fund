@@ -40,9 +40,19 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Trigger Dokploy redeploy
-        if: ${{ secrets.DOKPLOY_URL != '' && secrets.DOKPLOY_COMPOSE_ID != '' }}
+        # NOTE: the `secrets` context is NOT allowed in step `if:` conditions — doing
+        # so makes the whole workflow file invalid and every run fails at 0s (which is
+        # exactly why no deploy ever ran). Map secrets to env and guard in the shell.
+        env:
+          DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+          DOKPLOY_TOKEN: ${{ secrets.DOKPLOY_TOKEN }}
+          DOKPLOY_COMPOSE_ID: ${{ secrets.DOKPLOY_COMPOSE_ID }}
         run: |
-          curl -fsSL -X POST "${{ secrets.DOKPLOY_URL }}/api/compose.deploy" \
-            -H "Authorization: Bearer ${{ secrets.DOKPLOY_TOKEN }}" \
+          if [ -z "$DOKPLOY_URL" ] || [ -z "$DOKPLOY_COMPOSE_ID" ]; then
+            echo "Dokploy redeploy secrets not set — relying on Dokploy's own GitHub auto-deploy webhook to pull the fresh :latest image."
+            exit 0
+          fi
+          curl -fsSL -X POST "$DOKPLOY_URL/api/compose.deploy" \
+            -H "Authorization: Bearer $DOKPLOY_TOKEN" \
             -H "Content-Type: application/json" \
-            -d '{"composeId":"${{ secrets.DOKPLOY_COMPOSE_ID }}"}'
+            -d "{\"composeId\":\"$DOKPLOY_COMPOSE_ID\"}"

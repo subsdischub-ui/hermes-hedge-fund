@@ -11,7 +11,7 @@ Flow:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from hermes.agents.base import load_prompt
 from hermes.execution import get_exchange
@@ -105,7 +105,7 @@ async def run(state: HermesState) -> HermesState:
             side=fill.side,
             qty=fill.qty,
             entry_price=fill.price,
-            opened_at=fill.ts or datetime.now(timezone.utc),
+            opened_at=fill.ts or datetime.now(UTC),
             confidence=float(state.trader_proposal.get("confidence", 0.0)),
             skill_id=order.extra.get("skill_id", ""),
             thesis=order.extra.get("thesis", ""),

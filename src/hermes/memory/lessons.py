@@ -8,7 +8,7 @@ unsearchable lesson invisible to retrieval.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import desc, select
 
@@ -48,7 +48,7 @@ class LessonsStore:
                     metas=[
                         {
                             "tags": ",".join(tags),
-                            "created_at": datetime.now(timezone.utc).isoformat(),
+                            "created_at": datetime.now(UTC).isoformat(),
                         }
                     ],
                 )

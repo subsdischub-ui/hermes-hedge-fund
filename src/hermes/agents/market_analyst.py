@@ -39,7 +39,7 @@ async def run(state: HermesState) -> HermesState:
     except Exception as e:
         log.warning("funding_attach_failed", symbol=state.symbol, error=str(e))
 
-    h, l, c = df["high"], df["low"], df["close"]  # noqa: E741
+    h, l, c = df["high"], df["low"], df["close"]
     tr = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)
     atr = tr.rolling(14).mean().iloc[-1]
     ret_1 = float(np.log(c.iloc[-1] / c.iloc[-2]))

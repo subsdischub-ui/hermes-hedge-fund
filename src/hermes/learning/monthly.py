@@ -9,7 +9,7 @@ deployment; this entry point is a no-op that just exports a training set of
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 
@@ -25,7 +25,7 @@ async def run_monthly_compile(lookback_days: int = 30) -> str:
     s = get_settings()
     out_dir = s.data_dir / "compile"
     out_dir.mkdir(parents=True, exist_ok=True)
-    since = datetime.now(timezone.utc) - timedelta(days=lookback_days)
+    since = datetime.now(UTC) - timedelta(days=lookback_days)
     db = get_db()
     async with db.session() as sess:
         rows = (
@@ -49,7 +49,7 @@ async def run_monthly_compile(lookback_days: int = 30) -> str:
         }
         for r in rows
     ]
-    path = out_dir / f"trainset_{datetime.now(timezone.utc):%Y%m%d}.jsonl"
+    path = out_dir / f"trainset_{datetime.now(UTC):%Y%m%d}.jsonl"
     with path.open("w", encoding="utf-8") as f:
         for ex in examples:
             f.write(json.dumps(ex, default=str) + "\n")

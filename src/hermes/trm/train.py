@@ -22,12 +22,12 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from hermes.trm.encoder import ActionCodec, MarketStateEncoder, Action
+from hermes.trm.encoder import Action, ActionCodec, MarketStateEncoder
 
 
 def heuristic_label(df: pd.DataFrame, idx: int, lookahead: int = 8, atr_k: float = 2.0) -> Action:
     """Label = sign of next `lookahead` close return, stop/tp via ATR."""
-    h, l, c = df["high"], df["low"], df["close"]  # noqa: E741
+    h, l, c = df["high"], df["low"], df["close"]
     tr = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)
     atr = tr.rolling(14).mean().iloc[idx]
     if np.isnan(atr) or idx + lookahead >= len(df):
