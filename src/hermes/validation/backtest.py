@@ -63,7 +63,7 @@ def run_backtest(
     rbs: dict[str, list[float]] = defaultdict(list)
     seq = 0  # monotonic order across (symbol, bar) ~ chronological, for PBO binning
 
-    for _symbol, df in ohlcv_by_symbol.items():
+    for symbol, df in ohlcv_by_symbol.items():
         df = df.reset_index(drop=True)
         highs, lows, closes = df["high"].tolist(), df["low"].tolist(), df["close"].tolist()
         n = len(df)
@@ -71,7 +71,9 @@ def run_backtest(
             window = df.iloc[: t + 1]
             regime = detect_regime(window)
             snap = _snapshot(window, regime)
-            for sig in lib.evaluate_all(window):
+            # Symbol-aware: BTC-only skills (e.g. intraday_tod_btc) are skipped for
+            # other symbols, exactly as in the live tick.
+            for sig in lib.evaluate_for_symbol(symbol, window):
                 if sig.side == "HOLD":
                     continue
                 _, gross = triple_barrier_label(
@@ -92,4 +94,49 @@ def run_backtest(
                 rbs[sig.skill_id].append(ret_net)
                 seq += 1
 
+    # Cross-asset skills (e.g. ETH-BTC pairs): a separate, time-aligned pass over
+    # the two legs. The signal is on the SPREAD, so we score it as the realised
+    # market-neutral spread return over `horizon`, net of round-trip fees on BOTH
+    # legs (the BTC hedge leg is scaled by the cointegration hedge ratio). These
+    # do NOT enter the model-bootstrap `samples` set — pairs is market-neutral and
+    # would pollute the directional confidence calibrator — but they do feed the
+    # per-skill / overall return report (DSR, CPCV).
+    _run_cross_asset(ohlcv_by_symbol, lib, rbs, round_trip_cost, horizon, warmup, step)
+
     return BacktestResult(samples=samples, returns_by_skill=dict(rbs))
+
+
+def _run_cross_asset(
+    ohlcv_by_symbol: dict[str, pd.DataFrame],
+    lib,
+    rbs: dict[str, list[float]],
+    round_trip_cost: float,
+    horizon: int,
+    warmup: int,
+    step: int,
+) -> None:
+    if not ({"BTC/USDC", "ETH/USDC"} <= set(ohlcv_by_symbol)):
+        return
+    btc = ohlcv_by_symbol["BTC/USDC"].reset_index(drop=True)
+    eth = ohlcv_by_symbol["ETH/USDC"].reset_index(drop=True)
+    n = min(len(btc), len(eth))
+    btc_c = btc["close"].to_numpy(dtype=float)[:n]
+    eth_c = eth["close"].to_numpy(dtype=float)[:n]
+
+    for t in range(warmup, n - 1, max(1, step)):
+        ctx = {"BTC/USDC": btc.iloc[: t + 1], "ETH/USDC": eth.iloc[: t + 1]}
+        for sig in lib.evaluate_cross_asset(ctx):
+            if sig.side == "HOLD":
+                continue
+            h = min(horizon, n - 1 - t)
+            if h <= 0:
+                continue
+            hedge = float(sig.features.get("hedge", 1.0))
+            eth_ret = eth_c[t + h] / eth_c[t] - 1.0
+            btc_ret = btc_c[t + h] / btc_c[t] - 1.0
+            # Long the spread = long ETH, short hedge*BTC.
+            spread_ret = eth_ret - hedge * btc_ret
+            if sig.side == "SELL":  # short the spread
+                spread_ret = -spread_ret
+            cost = round_trip_cost * (1.0 + abs(hedge))  # both legs traded
+            rbs[sig.skill_id].append(float(spread_ret - cost))

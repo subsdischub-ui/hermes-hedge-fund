@@ -89,44 +89,119 @@ def learn(loop: str = typer.Argument("nightly")) -> None:
     asyncio.run(_run())
 
 
+@app.command(name="fetch-history")
+def fetch_history(
+    timeframe: str = typer.Option("1h", help="bar timeframe, e.g. 1h or 4h"),
+    years: float = typer.Option(2.0, help="how many years of history to assemble"),
+    max_batches: int = typer.Option(400, help="pagination safety cap"),
+) -> None:
+    """Assemble multi-year OHLCV per symbol via paginated CCXT and save it under
+    ${HERMES_DATA_DIR}/history/<SYM>_<tf>.csv for offline backtests."""
+
+    async def _run() -> None:
+        configure_logging("INFO")
+        import time
+
+        from hermes.data import get_market
+        from hermes.data.history import detect_gaps, save_history
+        from hermes.data.history import fetch_history as fh
+
+        tf_ms = {"1h": 3_600_000, "4h": 14_400_000}.get(timeframe, 3_600_000)
+        since_ms = int(time.time() * 1000) - int(years * 365 * 24 * 3_600_000)
+        s = get_settings()
+        md = get_market(s.paper_price_venue)
+        out_dir = s.data_dir / "history"
+        for sym in s.universe:
+            df = await fh(sym, timeframe, since_ms, md.client, max_batches=max_batches)
+            gaps = detect_gaps(df, tf_ms)
+            path = out_dir / f"{sym.replace('/', '_')}_{timeframe}.csv"
+            save_history(df, path)
+            typer.echo(f"{sym}: {len(df)} bars, {len(gaps)} gaps -> {path}")
+        await md.close()
+
+    asyncio.run(_run())
+
+
 @app.command()
 def backtest(
-    limit: int = typer.Option(1000, help="bars of 1h history to fetch per symbol"),
+    limit: int = typer.Option(1000, help="bars of 1h history to fetch per symbol (live mode)"),
     horizon: int = typer.Option(24, help="triple-barrier horizon in bars"),
     step: int = typer.Option(1, help="evaluate every Nth bar (speeds up long histories)"),
+    timeframe: str = typer.Option("1h", help="bar timeframe"),
+    history_dir: str = typer.Option(
+        "", help="load multi-year CSVs from this dir instead of a live fetch"
+    ),
     bootstrap: bool = typer.Option(
         False, help="persist the fitted calibrator + meta-labeler to /data/models"
     ),
 ) -> None:
-    """Replay the skills on historical OHLCV and report Deflated Sharpe / PBO /
-    win-rate net of fees; optionally bootstrap the live decision models."""
+    """Replay the engine on historical OHLCV and report Deflated Sharpe / CPCV /
+    PBO / win-rate net of fees; optionally bootstrap the live decision models.
+
+    With --history-dir, loads the long history assembled by `hermes fetch-history`
+    (so the DSR/PBO verdict spans a full cycle, not just the last ~1000 bars)."""
 
     async def _run() -> None:
         configure_logging("INFO")
+        from pathlib import Path
+
+        import pandas as pd
+
         from hermes.data import get_market
+        from hermes.data.history import load_history
+        from hermes.skills import get_skill_library
         from hermes.validation.backtest import run_backtest
+        from hermes.validation.cpcv import TrialRegistry
         from hermes.validation.report import backtest_report
 
         s = get_settings()
         fees = s.yaml("fees", default={}) or {}
         fee_bps = float(fees.get("spot_taker", 7))
         slip = float(fees.get("slippage_bps", 3))
-        md = get_market(s.paper_price_venue)
+
         ohlcv = {}
-        for sym in s.universe:
-            df = await md.ohlcv(sym, timeframe="1h", limit=limit)
-            ohlcv[sym] = df
-            typer.echo(f"fetched {sym}: {len(df)} bars")
-        await md.close()
+        if history_dir:
+            base = Path(history_dir)
+            for sym in s.universe:
+                path = base / f"{sym.replace('/', '_')}_{timeframe}.csv"
+                if not path.exists():
+                    typer.echo(f"skip {sym}: {path} not found")
+                    continue
+                df = load_history(path)
+                # History stores ts as epoch-ms ints; convert so time-of-day skills
+                # read real UTC hours (the live path already returns datetime ts).
+                df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
+                ohlcv[sym] = df
+                typer.echo(f"loaded {sym}: {len(df)} bars from {path}")
+        else:
+            md = get_market(s.paper_price_venue)
+            for sym in s.universe:
+                df = await md.ohlcv(sym, timeframe=timeframe, limit=limit)
+                ohlcv[sym] = df
+                typer.echo(f"fetched {sym}: {len(df)} bars")
+            await md.close()
 
         res = run_backtest(ohlcv, fee_bps=fee_bps, slippage_bps=slip, horizon=horizon, step=step)
-        rep = backtest_report(res)
+
+        # True trial count: each active skill is one frozen config tried this run;
+        # the registry accumulates across runs so the DSR deflates honestly.
+        lib = get_skill_library()
+        n_configs = len(lib.list_active()) + len(lib.list_active_cross())
+        registry = TrialRegistry(s.data_dir)
+        total_trials = registry.bump(n_configs)
+
+        rep = backtest_report(res, n_trials=total_trials)
         o = rep["overall"]
+        c = o["cpcv"]
         typer.echo("")
         typer.echo(f"=== Backtest ({o['n']} trades, fees {fee_bps}+{slip}bps, horizon {horizon}) ===")
         typer.echo(
             f"OVERALL  win_rate={o['win_rate']:.3f}  mean_ret={o['mean_ret']:+.4f}  "
-            f"DSR={o['dsr']:.3f}  PBO={o['pbo']:.3f}"
+            f"DSR={o['dsr']:.3f}  PBO={o['pbo']:.3f}  (n_trials={o['n_trials']})"
+        )
+        typer.echo(
+            f"CPCV     paths={c['n_paths']}  sharpe_mean={c['sharpe_mean']:+.3f}  "
+            f"median={c['sharpe_median']:+.3f}  frac_positive={c['frac_positive']:.2f}"
         )
         for sid, st in rep["per_skill"].items():
             typer.echo(

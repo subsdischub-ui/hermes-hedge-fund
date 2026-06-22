@@ -37,6 +37,36 @@ class Skill:
     id: str
     description: str
     fn: Callable[[pd.DataFrame], SkillSignal]
+    # Restrict the skill to symbols whose name starts with one of these prefixes
+    # (case-insensitive), e.g. ("BTC",) for a BTC-only skill. None = all symbols.
+    symbols: tuple[str, ...] | None = None
+
+
+@dataclass(frozen=True)
+class CrossAssetSkill:
+    """A skill that needs more than one symbol's OHLCV at once (e.g. pairs).
+
+    Its `fn` takes a context mapping ``symbol -> aligned OHLCV DataFrame`` and
+    returns a single SkillSignal for the cross-asset position (e.g. the spread).
+    """
+
+    id: str
+    description: str
+    fn: Callable[[dict[str, pd.DataFrame]], SkillSignal]
+
+
+def _applies_to(skill: Skill, symbol: str | None) -> bool:
+    """Whether a per-symbol skill should run for `symbol`.
+
+    `symbol=None` (the symbol-agnostic back-compat path) runs every skill. A
+    skill with `symbols=None` runs everywhere; otherwise it runs only when the
+    symbol name starts with one of its allowed prefixes (so "BTC" matches
+    "BTC/USDC", "BTC/USDT", ...).
+    """
+    if skill.symbols is None or symbol is None:
+        return True
+    su = symbol.upper()
+    return any(su.startswith(p.upper()) for p in skill.symbols)
 
 
 def _atr(df: pd.DataFrame, n: int = 14) -> pd.Series:
@@ -139,32 +169,85 @@ def trend_follow_ema(df: pd.DataFrame) -> SkillSignal:
     )
 
 
-_REGISTRY: dict[str, Skill] = {
-    "mean_reversion_atr": Skill(
-        id="mean_reversion_atr",
-        description="Buy oversold bands (BB lower + RSI < 30); short overbought. Best in range-bound regimes.",
-        fn=mean_reversion_atr,
-    ),
-    "breakout_vol_expansion": Skill(
-        id="breakout_vol_expansion",
-        description="Donchian-20 break with ATR expansion (vol > 1.5× 50-bar avg). Best in trend ignitions.",
-        fn=breakout_vol_expansion,
-    ),
-    "trend_follow_ema": Skill(
-        id="trend_follow_ema",
-        description="EMA 20/50/200 stack alignment + RSI bias. Best in established trends.",
-        fn=trend_follow_ema,
-    ),
-}
+# mean_reversion_atr and trend_follow_ema remain defined above (importable for
+# reference / rollback) but are NOT in the active slate: the Strategy Engine v1
+# replaces them with mean_reversion_regime and ts_mom_vol_scaled to avoid
+# double-counting range/trend exposure and inflating the DSR trial count.
+def _build_registry() -> dict[str, Skill]:
+    """Build the active per-symbol slate. Lazy imports avoid the import cycle
+    (the new skill modules import SkillSignal *from* this module)."""
+    from hermes.skills.intraday_tod import intraday_tod_btc
+    from hermes.skills.mean_reversion_regime import mean_reversion_regime
+    from hermes.skills.ts_mom import ts_mom_vol_scaled
+
+    return {
+        "ts_mom_vol_scaled": Skill(
+            id="ts_mom_vol_scaled",
+            description="Vol-scaled time-series momentum averaged over fixed lookbacks {12,24,48,96}; long/short. Best in established trends (generalises trend_follow_ema).",
+            fn=ts_mom_vol_scaled,
+        ),
+        "breakout_vol_expansion": Skill(
+            id="breakout_vol_expansion",
+            description="Donchian-20 break with ATR expansion (vol > 1.5x 50-bar avg). Best in trend ignitions.",
+            fn=breakout_vol_expansion,
+        ),
+        "mean_reversion_regime": Skill(
+            id="mean_reversion_regime",
+            description="RSI(2)+Bollinger %B, active ONLY in range regime (Kaufman ER gate) and on the mean-reverting side of MA200. Refactor of mean_reversion_atr.",
+            fn=mean_reversion_regime,
+        ),
+        "intraday_tod_btc": Skill(
+            id="intraday_tod_btc",
+            description="Intraday time-of-day BTC: the 13:00→14:00 UTC post-US-open return predicts the 20:00→21:00 UTC close window. ≤1 trade/day, BTC only.",
+            fn=intraday_tod_btc,
+            symbols=("BTC",),
+        ),
+    }
+
+
+def _build_cross_registry() -> dict[str, CrossAssetSkill]:
+    """Build the active cross-asset slate (lazy import to avoid the cycle)."""
+    from hermes.strategies.pairs import pairs_eth_btc
+
+    def _pairs_ctx(ctx: dict[str, pd.DataFrame]) -> SkillSignal:
+        eth = ctx.get("ETH/USDC")
+        btc = ctx.get("BTC/USDC")
+        if eth is None or btc is None:
+            return SkillSignal(
+                skill_id="pairs_eth_btc",
+                side="HOLD",
+                confidence=0.0,
+                stop_pct=0.02,
+                take_profit_pct=0.04,
+                rationale="missing ETH/USDC or BTC/USDC leg in context",
+                features={},
+            )
+        return pairs_eth_btc(eth, btc)
+
+    return {
+        "pairs_eth_btc": CrossAssetSkill(
+            id="pairs_eth_btc",
+            description="Cross-asset ETH-BTC cointegration spread (Engle-Granger), market-neutral. Regime-independent (always-on).",
+            fn=_pairs_ctx,
+        ),
+    }
 
 
 class SkillLibrary:
-    def __init__(self, registry: dict[str, Skill]):
+    def __init__(
+        self,
+        registry: dict[str, Skill],
+        cross_registry: dict[str, CrossAssetSkill] | None = None,
+    ):
         self._reg = dict(registry)
+        self._cross = dict(cross_registry or {})
         self._archived: set[str] = set()
 
     def list_active(self) -> list[Skill]:
         return [s for k, s in self._reg.items() if k not in self._archived]
+
+    def list_active_cross(self) -> list[CrossAssetSkill]:
+        return [s for k, s in self._cross.items() if k not in self._archived]
 
     def get(self, skill_id: str) -> Skill | None:
         return self._reg.get(skill_id)
@@ -175,8 +258,17 @@ class SkillLibrary:
     def restore(self, skill_id: str) -> None:
         self._archived.discard(skill_id)
 
+    def evaluate_for_symbol(self, symbol: str | None, df: pd.DataFrame) -> list[SkillSignal]:
+        """Run the per-symbol skills that apply to `symbol` (symbol filtering)."""
+        return [s.fn(df) for s in self.list_active() if _applies_to(s, symbol)]
+
+    def evaluate_cross_asset(self, ctx: dict[str, pd.DataFrame]) -> list[SkillSignal]:
+        """Run the cross-asset skills over an aligned multi-symbol context."""
+        return [s.fn(ctx) for s in self.list_active_cross()]
+
     def evaluate_all(self, df: pd.DataFrame) -> list[SkillSignal]:
-        return [s.fn(df) for s in self.list_active()]
+        """Back-compat symbol-agnostic evaluation (runs every per-symbol skill)."""
+        return self.evaluate_for_symbol(None, df)
 
     async def reload_archival_from_db(self) -> None:
         """Rehydrate the in-memory archive set from the most recent SkillStatRow
@@ -204,4 +296,4 @@ def get_skill_library() -> SkillLibrary:
     # Archival state is rehydrated explicitly by the API lifespan via
     # reload_archival_from_db(); constructing the library is intentionally cheap
     # and side-effect-free so it is safe to call from sync contexts (e.g. backtest).
-    return SkillLibrary(_REGISTRY)
+    return SkillLibrary(_build_registry(), _build_cross_registry())

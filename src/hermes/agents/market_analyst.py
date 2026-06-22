@@ -9,6 +9,12 @@ from hermes.data import get_market
 from hermes.data.regime import detect_regime, regime_signal_weight
 from hermes.graph.state import HermesState
 from hermes.skills import get_skill_library
+from hermes.strategies.combination import annotate_active_and_blend
+
+# Last routed regime per symbol, so route_regime's hysteresis carries across
+# ticks (each tick gets a fresh HermesState). Advisory only — no sizing depends
+# on it, so a process-local cache is sufficient.
+_PREV_REGIME: dict[str, str] = {}
 
 
 async def run(state: HermesState) -> HermesState:
@@ -38,12 +44,25 @@ async def run(state: HermesState) -> HermesState:
         "regime": regime["regime"],
         "regime_efficiency_ratio": round(regime["efficiency_ratio"], 3),
     }
+    # Symbol-aware evaluation: BTC-only skills (e.g. intraday_tod_btc) are not run
+    # for ETH/SOL, matching the backtest.
+    sigs = [s.__dict__ for s in get_skill_library().evaluate_for_symbol(state.symbol, df)]
     # Regime-condition the skill signals: down-weight off-regime skills (e.g.
     # mean-reversion in a trend) so the trader/researchers see a regime-aware prior.
-    sigs = [s.__dict__ for s in get_skill_library().evaluate_all(df)]
     for sig in sigs:
         w = regime_signal_weight(sig.get("skill_id", ""), regime["regime"])
         sig["regime_weight"] = w
         sig["confidence"] = float(sig.get("confidence", 0.0)) * w
+
+    # Combination layer (SHADOW/advisory): route the regime with hysteresis and tag
+    # which skills are active + their inverse-vol blend weight. Does not size or
+    # place orders — it only enriches context for the researcher/trader agents.
+    # Live blend weights stay 0 until per-skill journal returns are plumbed in;
+    # the blend is validated in the backtest (CPCV/DSR) before it moves capital.
+    prev = _PREV_REGIME.get(state.symbol)
+    routed, sigs = annotate_active_and_blend(
+        sigs, regime["efficiency_ratio"], prev, returns_by_skill={}
+    )
+    _PREV_REGIME[state.symbol] = routed
     state.skill_signals = sigs
     return state

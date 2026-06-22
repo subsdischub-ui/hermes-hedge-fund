@@ -38,6 +38,7 @@ dependencies = [
     "numpy>=2.0",
     "scipy>=1.14",         # Probabilistic/Deflated Sharpe (learning/stats.py)
     "scikit-learn>=1.5",   # isotonic confidence calibration (risk/calibration.py)
+    "statsmodels>=0.14",   # cointegration (Engle-Granger / ADF) for pairs strategy
     "pandas-ta>=0.3.14b",
 
     # Modelling (TRM runs on CPU inside the container)

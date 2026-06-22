@@ -1,8 +1,15 @@
 from hermes.skills.library import (
+    CrossAssetSkill,
     Skill,
-    SkillSignal,
     SkillLibrary,
+    SkillSignal,
     get_skill_library,
 )
 
-__all__ = ["Skill", "SkillSignal", "SkillLibrary", "get_skill_library"]
+__all__ = [
+    "CrossAssetSkill",
+    "Skill",
+    "SkillLibrary",
+    "SkillSignal",
+    "get_skill_library",
+]
