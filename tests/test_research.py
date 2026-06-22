@@ -83,3 +83,67 @@ def test_orthogonality_identical_and_opposite():
 
 def test_orthogonality_empty_is_zero():
     assert orthogonality([], [(1, 1.0)]) == 0.0
+
+
+# ----------------------------- signal #2 VR -------------------------------- #
+def test_variance_ratio_random_walk_near_one():
+    from hermes.research.signals import variance_ratio
+
+    rng = np.random.default_rng(0)
+    r = rng.standard_normal(2000) * 0.01  # iid -> VR ~ 1
+    vr, _ = variance_ratio(r, 4)
+    assert 0.7 < vr < 1.3
+
+
+def test_variance_ratio_mean_reverting_below_threshold():
+    from hermes.research.signals import variance_ratio
+
+    r = np.array([0.01, -0.01] * 600)  # perfectly alternating -> strong mean reversion
+    vr, z = variance_ratio(r, 4)
+    assert vr < 0.8
+    assert z < -1.64
+
+
+def test_vr_antitrend_fade_shorts_stretched_meanreverting():
+    from hermes.research.signals import vr_antitrend_fade
+
+    closes = [100.0 + (1.0 if i % 2 == 0 else -1.0) for i in range(245)]
+    closes[-1] = 104.0  # stretched up at the end
+    df = pd.DataFrame({"close": closes})
+    assert vr_antitrend_fade(df).side == "SELL"
+
+
+def test_vr_antitrend_fade_holds_in_trend():
+    from hermes.research.signals import vr_antitrend_fade
+
+    rng = np.random.default_rng(3)
+    # Random walk -> VR ≈ 1 (neither mean-reverting nor trending) -> must NOT fire.
+    closes = 100.0 * np.exp(np.cumsum(rng.standard_normal(245) * 0.01))
+    assert vr_antitrend_fade(pd.DataFrame({"close": closes})).side == "HOLD"
+
+
+# ----------------------------- signal #4 flow ------------------------------ #
+def _flow_df(n=160, stretch_up=True, ofi_extreme=True):
+    rng = np.random.default_rng(1)
+    close = np.full(n, 100.0) + rng.standard_normal(n) * 0.2
+    close[-1] = 103.0 if stretch_up else 97.0  # stretched last bar
+    vol = np.full(n, 1000.0)
+    nt = np.full(n, 500.0)
+    tbb = np.full(n, 500.0)  # ofi = 500/1000-0.5 = 0 baseline
+    if ofi_extreme:
+        tbb[-1] = 950.0 if stretch_up else 50.0  # extreme aggressor side
+        vol[-1] = 1000.0
+        nt[-1] = 200.0  # larger avg trade size -> high atsz
+    return pd.DataFrame({"close": close, "volume": vol, "taker_buy_base": tbb, "num_trades": nt})
+
+
+def test_flow_exhaustion_fade_shorts_unconfirmed_up_extension():
+    from hermes.research.signals import flow_exhaustion_fade
+
+    assert flow_exhaustion_fade(_flow_df(stretch_up=True, ofi_extreme=True)).side == "SELL"
+
+
+def test_flow_exhaustion_fade_holds_without_flow_extreme():
+    from hermes.research.signals import flow_exhaustion_fade
+
+    assert flow_exhaustion_fade(_flow_df(stretch_up=True, ofi_extreme=False)).side == "HOLD"
