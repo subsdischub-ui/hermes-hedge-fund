@@ -39,6 +39,37 @@ class MarketData:
         df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
         return df
 
+    async def funding_history(self, symbol: str, limit: int = 200) -> pd.DataFrame:
+        """Live perp funding-rate history from Binance USDT-M — the SAME source as
+        the OOS-validated backtest (research/funding CSVs), so the live
+        funding_squeeze_continuation skill sees the same series it was validated on.
+
+        Maps "BTC/USDC" -> "BTCUSDT". Returns [ts (datetime UTC), funding_rate],
+        sorted ascending. Public endpoint (no auth). On ANY failure returns an empty
+        df so the funding skill simply HOLDs — never breaks the decision tick.
+        """
+        base = symbol.split("/")[0].upper()
+        fsym = f"{base}USDT"
+        try:
+            import httpx
+
+            async with httpx.AsyncClient(timeout=10.0) as cx:
+                r = await cx.get(
+                    "https://fapi.binance.com/fapi/v1/fundingRate",
+                    params={"symbol": fsym, "limit": int(limit)},
+                )
+                r.raise_for_status()
+                rows = r.json()
+            if not rows:
+                return pd.DataFrame(columns=["ts", "funding_rate"])
+            df = pd.DataFrame(rows)
+            df["ts"] = pd.to_datetime(df["fundingTime"].astype("int64"), unit="ms", utc=True)
+            df["funding_rate"] = df["fundingRate"].astype(float)
+            return df[["ts", "funding_rate"]].sort_values("ts").reset_index(drop=True)
+        except Exception as e:  # network, symbol-not-found, schema drift -> graceful
+            log.warning("funding_history_failed", symbol=symbol, error=str(e))
+            return pd.DataFrame(columns=["ts", "funding_rate"])
+
     async def ticker(self, symbol: str) -> dict:
         return await self.client.fetch_ticker(symbol)
 

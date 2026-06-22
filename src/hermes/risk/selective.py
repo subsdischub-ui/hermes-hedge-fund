@@ -49,7 +49,7 @@ def selective_gate(
     symbol: str,
     skill_id: str,
     skill_signals: Iterable[dict],
-    open_symbols: set[str],
+    open_keys: set[tuple[str, str]],
     cfg: SelectiveConfig,
 ) -> tuple[bool, str]:
     """Return ``(allowed, reason)`` for a proposed trade under the selective rule.
@@ -57,7 +57,12 @@ def selective_gate(
     No-op (always allowed) when disabled or the side is HOLD. Otherwise the
     proposal must (a) use a skill in the selective slate, (b) for conviction-gated
     skills, be backed by a raw signal strength >= conviction_min, and (c) not
-    pyramid onto a symbol already holding a position.
+    pyramid onto a (symbol, skill) it is ALREADY holding.
+
+    ``open_keys`` is the set of ``(symbol, skill_id)`` currently open. No-pyramid is
+    PER (symbol, skill): Strategy #1 (momentum) holding BTC does NOT block Strategy
+    #2 (funding) from also opening BTC — the two run as concurrent, independent
+    sleeves (each capped to one position per symbol).
     """
     if not cfg.enabled or side == "HOLD":
         return True, "selective_mode off" if not cfg.enabled else "hold"
@@ -77,26 +82,36 @@ def selective_gate(
         if conf < cfg.conviction_min:
             return False, f"conviction {conf:.2f} < {cfg.conviction_min} (low-conviction tail)"
 
-    if cfg.no_pyramid and symbol in open_symbols:
-        return False, "already holding a position (no-pyramid / one position per move)"
+    if cfg.no_pyramid and (symbol, skill_id) in open_keys:
+        return False, "already holding this symbol via this skill (no-pyramid / one position per sleeve)"
 
     return True, "passed selective gate"
 
 
-def pick_selective_signal(
-    skill_signals: Iterable[dict], cfg: SelectiveConfig, symbol: str
-) -> dict | None:
-    """The deterministic selective signal that should DRIVE the trade (overriding
-    the LLM's veto in selective_mode), or None if nothing qualifies.
+def _as_proposal(s: dict, conf: float, symbol: str) -> dict:
+    return {
+        "symbol": symbol,
+        "side": s["side"],
+        "confidence": conf,
+        "stop_pct": float(s.get("stop_pct", 0.02)),
+        "take_profit_pct": float(s.get("take_profit_pct", 0.04)),
+        "skill_id": s.get("skill_id", ""),
+        "thesis": "selective deterministic signal (validated rule drives; LLM advisory)",
+    }
 
-    Picks the highest raw-conviction non-HOLD signal in the slate that clears the
-    conviction floor (conviction-gated skills only). The backtest-validated rule is
-    deterministic, so in selective_mode the agent must trade THIS — the LLM trader
-    is advisory, not a gate. Returns a proposal dict the risk engine can size.
+
+def rank_selective_signals(
+    skill_signals: Iterable[dict], cfg: SelectiveConfig, symbol: str
+) -> list[dict]:
+    """All qualifying deterministic proposals for this symbol, highest conviction
+    first. 'Qualifying' = non-HOLD, in the slate, and (for conviction-gated skills)
+    clearing the conviction floor. The caller drops any whose (symbol, skill) is
+    already held (no-pyramid) and takes the first survivor, so a held momentum
+    position does NOT waste the tick — the funding sleeve can still be selected.
     """
     if not cfg.enabled:
-        return None
-    best, best_conf = None, -1.0
+        return []
+    cands: list[tuple[float, dict]] = []
     for s in skill_signals:
         sid = s.get("skill_id", "")
         if s.get("side", "HOLD") == "HOLD":
@@ -106,16 +121,37 @@ def pick_selective_signal(
         conf = float(s.get("confidence_raw", s.get("confidence", 0.0)))
         if sid in _CONVICTION_GATED and conf < cfg.conviction_min:
             continue
-        if conf > best_conf:
-            best, best_conf = s, conf
-    if best is None:
-        return None
-    return {
-        "symbol": symbol,
-        "side": best["side"],
-        "confidence": best_conf,
-        "stop_pct": float(best.get("stop_pct", 0.02)),
-        "take_profit_pct": float(best.get("take_profit_pct", 0.04)),
-        "skill_id": best.get("skill_id", ""),
-        "thesis": "selective deterministic signal (validated rule drives; LLM advisory)",
-    }
+        cands.append((conf, s))
+    cands.sort(key=lambda x: -x[0])
+    return [_as_proposal(s, conf, symbol) for conf, s in cands]
+
+
+def pick_selective_signal(
+    skill_signals: Iterable[dict], cfg: SelectiveConfig, symbol: str
+) -> dict | None:
+    """The single highest-conviction qualifying proposal (or None). Thin wrapper
+    over :func:`rank_selective_signals` for callers that don't do per-sleeve
+    no-pyramid filtering."""
+    ranked = rank_selective_signals(skill_signals, cfg, symbol)
+    return ranked[0] if ranked else None
+
+
+def drive_signal(
+    skill_signals: Iterable[dict],
+    cfg: SelectiveConfig,
+    symbol: str,
+    open_keys: set[tuple[str, str]],
+) -> dict | None:
+    """The deterministic proposal that should DRIVE this tick, or None.
+
+    Gate-aware: returns the highest-conviction qualifying signal whose
+    ``(symbol, skill_id)`` is NOT already held under no-pyramid. This is what makes
+    two sleeves coexist — if Strategy #1 (momentum) already holds the symbol, it is
+    skipped here so Strategy #2 (funding) can still be driven on the same tick
+    instead of the tick being wasted on a signal that the gate will reject.
+    """
+    for cand in rank_selective_signals(skill_signals, cfg, symbol):
+        if cfg.no_pyramid and (symbol, cand["skill_id"]) in open_keys:
+            continue
+        return cand
+    return None

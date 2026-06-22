@@ -159,6 +159,26 @@ def test_attach_funding_asof_backward_no_lookahead():
     assert list(out["funding_rate"]) == [0.0, 0.01, -0.02]  # bar 100 pre-funding -> 0
 
 
+def test_attach_funding_live_datetime_subsecond_alignment():
+    """LIVE fidelity: an exchange funding stamp a few ms AFTER the bar boundary must
+    still attach to THAT bar (floored to the second), not one bar late, while staying
+    causal (no future settlement leaks into an earlier bar)."""
+    from hermes.research.funding import attach_funding
+
+    bars = pd.to_datetime(
+        ["2026-06-22 08:00", "2026-06-22 12:00", "2026-06-22 16:00"], utc=True
+    )
+    ohlcv = pd.DataFrame({"ts": bars, "close": [1.0, 2.0, 3.0]})
+    # Settlements 2 ms AFTER the 08:00 and 16:00 boundaries (Binance-style jitter).
+    fts = pd.to_datetime(
+        ["2026-06-22 08:00:00.002", "2026-06-22 16:00:00.002"], utc=True
+    )
+    funding = pd.DataFrame({"ts": fts, "funding_rate": [0.05, 0.09]})
+    out = attach_funding(ohlcv, funding)
+    # 08:00 bar gets the 08:00 settlement (NOT 0/stale); 12:00 carries it; 16:00 its own.
+    assert list(out["funding_rate"]) == [0.05, 0.05, 0.09]
+
+
 def test_funding_extreme_fade_shorts_high_funding():
     from hermes.research.signals import funding_extreme_fade
 
@@ -182,6 +202,52 @@ def test_funding_extreme_fade_holds_when_neutral():
     df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
                        "funding_rate": fr})
     assert funding_extreme_fade(df).side == "HOLD"
+
+
+# -------- VALIDATED Strategy #2: funding_squeeze_continuation -------------- #
+def test_funding_continuation_LONGS_extreme_positive_funding():
+    """The validated sign: extreme-positive funding -> LONG the continuation
+    (opposite of the refuted fade, which shorted it)."""
+    from hermes.research.signals import funding_squeeze_continuation
+
+    n = 200
+    rng = np.random.default_rng(2)
+    fr = rng.standard_normal(n) * 0.0001
+    fr[-1] = 0.02  # extreme positive funding -> continuation -> BUY (not SELL)
+    close = np.full(n, 100.0) + rng.standard_normal(n) * 0.1
+    df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
+                       "funding_rate": fr})
+    sig = funding_squeeze_continuation(df)
+    assert sig.side == "BUY"
+    assert sig.features["hold_bars"] == 24         # the validated ~96h horizon
+    assert sig.take_profit_pct > sig.stop_pct      # convex: let the trend run
+
+
+def test_funding_continuation_holds_when_not_extreme():
+    from hermes.research.signals import funding_squeeze_continuation
+
+    n = 200
+    rng = np.random.default_rng(5)
+    fr = rng.standard_normal(n) * 0.0001  # no extreme
+    close = np.full(n, 100.0) + rng.standard_normal(n) * 0.1
+    df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
+                       "funding_rate": fr})
+    assert funding_squeeze_continuation(df).side == "HOLD"
+
+
+def test_funding_continuation_does_not_short_negative_funding():
+    """Frozen scope: only the extreme-POSITIVE tail (3/3-asset robust). The
+    negative-funding squeeze (2/3 assets) is deliberately NOT traded yet."""
+    from hermes.research.signals import funding_squeeze_continuation
+
+    n = 200
+    rng = np.random.default_rng(8)
+    fr = rng.standard_normal(n) * 0.0001
+    fr[-1] = -0.02  # extreme negative -> still HOLD (not in frozen scope)
+    close = np.full(n, 100.0) + rng.standard_normal(n) * 0.1
+    df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
+                       "funding_rate": fr})
+    assert funding_squeeze_continuation(df).side == "HOLD"
 
 
 # --------------------------- round 2 candidates ---------------------------- #

@@ -43,3 +43,18 @@ def is_past_max_hold(opened_at: datetime, now: datetime, max_hold_secs: int) -> 
     if max_hold_secs <= 0:
         return False
     return (now - opened_at).total_seconds() >= max_hold_secs
+
+
+def max_hold_bars_for(skill_id: str, strategy_cfg: dict) -> int:
+    """Per-skill holding horizon, falling back to the global default.
+
+    Different validated strategies have different vertical-barrier horizons:
+    momentum (Strategy #1) exits at ``max_hold_bars`` (~12 bars/48h), while
+    funding_squeeze_continuation (Strategy #2) was validated on a ~24-bar/96h hold.
+    ``strategy.max_hold_bars_by_skill`` maps skill_id -> bars; anything not listed
+    uses ``strategy.max_hold_bars``.
+    """
+    by_skill = strategy_cfg.get("max_hold_bars_by_skill", {}) or {}
+    if skill_id in by_skill:
+        return int(by_skill[skill_id])
+    return int(strategy_cfg.get("max_hold_bars", 0) or 0)

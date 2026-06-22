@@ -6,7 +6,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
-from hermes.risk.timeexit import is_past_max_hold, max_hold_seconds, timeframe_seconds
+from hermes.risk.timeexit import (
+    is_past_max_hold,
+    max_hold_bars_for,
+    max_hold_seconds,
+    timeframe_seconds,
+)
 
 
 def test_timeframe_seconds():
@@ -35,3 +40,24 @@ def test_is_past_max_hold_disabled_when_zero():
     now = datetime(2026, 1, 2, tzinfo=UTC)
     opened = now - timedelta(days=30)
     assert is_past_max_hold(opened, now, 0) is False  # 0 = no time exit
+
+
+# --- per-skill horizon (Strategy #1 12 bars vs Strategy #2 funding 24 bars) ---
+_STRAT_CFG = {
+    "max_hold_bars": 12,
+    "max_hold_bars_by_skill": {"funding_squeeze_continuation": 24},
+}
+
+
+def test_max_hold_bars_for_funding_override():
+    assert max_hold_bars_for("funding_squeeze_continuation", _STRAT_CFG) == 24
+
+
+def test_max_hold_bars_for_momentum_uses_global_default():
+    assert max_hold_bars_for("ts_mom_vol_scaled", _STRAT_CFG) == 12
+    assert max_hold_bars_for("unknown_skill", _STRAT_CFG) == 12
+
+
+def test_max_hold_bars_for_no_overrides_block():
+    assert max_hold_bars_for("anything", {"max_hold_bars": 12}) == 12
+    assert max_hold_bars_for("anything", {}) == 0  # nothing configured -> no time exit

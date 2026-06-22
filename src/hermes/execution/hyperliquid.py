@@ -196,7 +196,12 @@ class HyperliquidExchange(Exchange):
                 log.warning("hl_tpsl_attach_failed", symbol=order.symbol, error=str(e))
         return fill
 
-    async def close_position(self, symbol: str, reason: str) -> Fill | None:
+    async def close_position(
+        self, symbol: str, reason: str, skill_id: str | None = None
+    ) -> Fill | None:
+        # skill_id is accepted for interface parity with the paper book (which holds
+        # one position per (symbol, skill)); a real perp venue nets to ONE position
+        # per symbol, so the whole symbol is closed regardless of skill_id.
         coin = symbol.split("/")[0]
         result = await self._to_thread(self.exchange.market_close, coin)
         log.info("hl_close_status", status=result.get("status"), symbol=symbol, reason=reason)

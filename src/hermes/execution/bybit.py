@@ -116,7 +116,11 @@ class BybitExchange(Exchange):
             fee_usd=float((r.get("fee") or {}).get("cost", 0.0)),
         )
 
-    async def close_position(self, symbol: str, reason: str) -> Fill | None:
+    async def close_position(
+        self, symbol: str, reason: str, skill_id: str | None = None
+    ) -> Fill | None:
+        # skill_id accepted for interface parity with the paper book; a real perp
+        # venue nets to one position per symbol, so skill_id does not sub-select here.
         # Look up the open journal row to find the qty we actually own.
         from hermes.memory.store import JournalRow, get_db
 

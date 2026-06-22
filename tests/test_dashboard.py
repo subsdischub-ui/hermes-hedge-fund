@@ -16,3 +16,23 @@ def test_dashboard_html_and_data():
         j = data.json()
         for key in ("stage", "equity_usd", "journal", "open_positions", "scheduler", "models"):
             assert key in j
+
+
+def test_strategies_ab_attributes_funding_to_strategy_2():
+    """A/B split: funding trades land under Strategy #2 (the validated brick),
+    momentum under #1."""
+    from types import SimpleNamespace
+
+    from hermes.api import _strategies_ab
+
+    rows = [
+        SimpleNamespace(skill_id="ts_mom_vol_scaled", pnl_usd=1.0),
+        SimpleNamespace(skill_id="funding_squeeze_continuation", pnl_usd=2.0),
+        SimpleNamespace(skill_id="funding_squeeze_continuation", pnl_usd=-0.5),
+    ]
+    ab = _strategies_ab(rows)
+    assert ab["strategy_1"]["live"]["n"] == 1
+    assert ab["strategy_2"]["live"]["n"] == 2
+    assert ab["strategy_2"]["status"] == "live"  # has closed funding trades
+    assert "funding" in ab["strategy_2"]["label"].lower()
+    assert ab["strategy_2"]["research"]["oos_validated_bricks"] == 1

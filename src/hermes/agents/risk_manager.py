@@ -12,7 +12,11 @@ from hermes.risk import get_risk_engine
 from hermes.risk.calibration import get_confidence_calibrator
 from hermes.risk.guardrails import TradeProposal
 from hermes.risk.meta_labeling import get_meta_labeler, meta_features
-from hermes.risk.selective import load_selective_config, pick_selective_signal, selective_gate
+from hermes.risk.selective import (
+    drive_signal,
+    load_selective_config,
+    selective_gate,
+)
 from hermes.risk.volforecast import har_rv_forecast, vol_target_scale
 from hermes.settings import get_settings
 from hermes.trm import get_trm
@@ -42,7 +46,12 @@ async def run(state: HermesState) -> HermesState:
     # agent holds. This makes the LIVE agent faithfully reproduce the backtest.
     sel_cfg = load_selective_config(get_settings())
     if sel_cfg.enabled:
-        det = pick_selective_signal(state.skill_signals or [], sel_cfg, state.symbol)
+        # Per-sleeve no-pyramid: key open positions by (symbol, skill) so Strategy #1
+        # (momentum) holding a symbol does NOT crowd out Strategy #2 (funding) on it.
+        open_keys = {(p.symbol, p.skill_id) for p in await get_exchange().open_positions()}
+        # Gate-aware drive: highest-conviction proposal whose (symbol, skill) is not
+        # already held — so a held sleeve doesn't waste the tick for the other.
+        det = drive_signal(state.skill_signals or [], sel_cfg, state.symbol, open_keys)
         if det is not None:
             if proposal.side != det["side"] or proposal.skill_id != det["skill_id"]:
                 log.info(
@@ -55,10 +64,9 @@ async def run(state: HermesState) -> HermesState:
                 thesis=det["thesis"], skill_id=det["skill_id"],
             )
             side = proposal.side
-            open_symbols = {p.symbol for p in await get_exchange().open_positions()}
             ok, reason = selective_gate(
                 proposal.side, proposal.symbol, proposal.skill_id,
-                state.skill_signals or [], open_symbols, sel_cfg,
+                state.skill_signals or [], open_keys, sel_cfg,
             )
             state.selective_gate = {"passed": ok, "reason": reason, "deterministic": True}
             if not ok:

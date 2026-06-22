@@ -176,6 +176,7 @@ def trend_follow_ema(df: pd.DataFrame) -> SkillSignal:
 def _build_registry() -> dict[str, Skill]:
     """Build the active per-symbol slate. Lazy imports avoid the import cycle
     (the new skill modules import SkillSignal *from* this module)."""
+    from hermes.research.signals import funding_squeeze_continuation
     from hermes.skills.intraday_tod import intraday_tod_btc
     from hermes.skills.mean_reversion_regime import mean_reversion_regime
     from hermes.skills.ts_mom import ts_mom_vol_scaled
@@ -185,6 +186,11 @@ def _build_registry() -> dict[str, Skill]:
             id="ts_mom_vol_scaled",
             description="Vol-scaled time-series momentum averaged over fixed lookbacks {12,24,48,96}; long/short. Best in established trends (generalises trend_follow_ema).",
             fn=ts_mom_vol_scaled,
+        ),
+        "funding_squeeze_continuation": Skill(
+            id="funding_squeeze_continuation",
+            description="Strategy #2 (validated OOS): extreme-positive perp funding (|z|>=2 over 180 bars) marks leveraged-demand trend continuation; LONG, ~24-bar hold. Orthogonal to momentum (daily-PnL rho~0.04). Needs a funding_rate column (attached live from Binance USDT-M).",
+            fn=funding_squeeze_continuation,
         ),
         "breakout_vol_expansion": Skill(
             id="breakout_vol_expansion",

@@ -33,7 +33,9 @@ async def tick() -> int:
     journal = TradeJournal()
     closed = 0
     for pos, reason in await engine.check_stops(exchange):
-        fill = await exchange.close_position(pos.symbol, reason)
+        # Close the SPECIFIC (symbol, skill) position — two strategies may hold the
+        # same symbol concurrently, so skill_id disambiguates which one exits.
+        fill = await exchange.close_position(pos.symbol, reason, skill_id=pos.skill_id)
         if fill is None:
             continue
         # PnL nets the close-side fee. Open-side fee was already paid into cash
@@ -45,7 +47,11 @@ async def tick() -> int:
             row = (
                 await s.execute(
                     select(JournalRow)
-                    .where(JournalRow.symbol == pos.symbol, JournalRow.closed_at.is_(None))
+                    .where(
+                        JournalRow.symbol == pos.symbol,
+                        JournalRow.skill_id == pos.skill_id,
+                        JournalRow.closed_at.is_(None),
+                    )
                     .order_by(JournalRow.id.asc())   # FIFO
                     .limit(1)
                 )

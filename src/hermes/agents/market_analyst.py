@@ -8,8 +8,12 @@ import pandas as pd
 from hermes.data import get_market
 from hermes.data.regime import detect_regime, regime_signal_weight
 from hermes.graph.state import HermesState
+from hermes.logging_setup import get_logger
+from hermes.research.funding import attach_funding
 from hermes.skills import get_skill_library
 from hermes.strategies.combination import annotate_active_and_blend
+
+log = get_logger(__name__)
 
 # Last routed regime per symbol, so route_regime's hysteresis carries across
 # ticks (each tick gets a fresh HermesState). Advisory only — no sizing depends
@@ -23,6 +27,17 @@ async def run(state: HermesState) -> HermesState:
     if len(df) < 60:
         state.error = "insufficient ohlcv"
         return state
+
+    # Attach live perp funding so Strategy #2 (funding_squeeze_continuation) can
+    # compute the same funding z-score it was validated on. Best-effort: if the
+    # feed is empty/unavailable, the funding skill finds no funding_rate column and
+    # HOLDs — the rest of the tick is unaffected.
+    try:
+        fdf = await md.funding_history(state.symbol)
+        if not fdf.empty:
+            df = attach_funding(df, fdf)
+    except Exception as e:
+        log.warning("funding_attach_failed", symbol=state.symbol, error=str(e))
 
     h, l, c = df["high"], df["low"], df["close"]  # noqa: E741
     tr = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)

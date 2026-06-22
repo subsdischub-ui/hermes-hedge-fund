@@ -41,3 +41,18 @@ def test_pulse_entry_no_actionable_signal():
     e = pulse_entry("SOL/USDC", {"regime": "range", "efficiency_ratio": 0.1}, sigs, set(), CFG)
     assert e["would_act"] == "HOLD"
     assert e["signals"] == []  # no non-HOLD signals surfaced
+
+
+def test_pulse_entry_emits_live_gauges_for_both_sleeves_even_when_holding():
+    """Visibility: the dashboard must show each sleeve's live reading vs its arm
+    threshold, even while both hold (momentum conviction, funding z)."""
+    sigs = [
+        _sig("ts_mom_vol_scaled", "BUY", 0.4),
+        SkillSignal("funding_squeeze_continuation", "HOLD", 0.0, 0.02, 0.04, "z<2", {"funding_z": 0.8}),
+    ]
+    e = pulse_entry("BTC/USDC", {"regime": "range", "efficiency_ratio": 0.1}, sigs, set(), CFG)
+    g = {x["sleeve"]: x for x in e["gauges"]}
+    assert g["Momentum #1"]["val"] == 0.4 and g["Momentum #1"]["thr"] == 1.0
+    assert g["Momentum #1"]["armed"] is False
+    assert g["Funding #2"]["val"] == 0.8 and g["Funding #2"]["thr"] == 2.0
+    assert g["Funding #2"]["armed"] is False

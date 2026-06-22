@@ -60,6 +60,54 @@ async def test_paper_roundtrip_preserves_equity(tmp_data_dir: Path):
 
 
 @pytest.mark.asyncio
+async def test_two_skills_hold_same_symbol_concurrently(tmp_data_dir: Path):
+    """A/B concurrency: Strategy #1 (momentum) and #2 (funding) each hold ONE BTC
+    position at once; they don't net together and close independently."""
+    px = _make_px(tmp_data_dir, name="paper_ab.json")
+    await px.place_order(Order(
+        symbol="BTC/USDC", side="BUY", qty=0.001, extra={"skill_id": "ts_mom_vol_scaled"}))
+    await px.place_order(Order(
+        symbol="BTC/USDC", side="BUY", qty=0.002, extra={"skill_id": "funding_squeeze_continuation"}))
+
+    pos = await px.open_positions()
+    assert len(pos) == 2  # two concurrent positions on the SAME symbol
+    by_skill = {p.skill_id: p.qty for p in pos}
+    assert by_skill["ts_mom_vol_scaled"] == pytest.approx(0.001)        # not netted/averaged
+    assert by_skill["funding_squeeze_continuation"] == pytest.approx(0.002)
+
+    # Closing ONE sleeve leaves the other intact.
+    await px.close_position("BTC/USDC", reason="max_hold", skill_id="ts_mom_vol_scaled")
+    pos2 = await px.open_positions()
+    assert len(pos2) == 1
+    assert pos2[0].skill_id == "funding_squeeze_continuation"
+    assert pos2[0].qty == pytest.approx(0.002)
+
+
+@pytest.mark.asyncio
+async def test_legacy_symbol_keyed_state_migrates(tmp_data_dir: Path):
+    """A pre-existing symbol-keyed state file upgrades to the (symbol, skill)
+    composite key on load, preserving the position and its attribution."""
+    state_path = tmp_data_dir / "paper_legacy.json"
+    state_path.write_text(json.dumps({
+        "cash_usd": 100.0,
+        "positions": {"BTC/USDC": {
+            "qty": 0.001, "entry_price": 50_000.0, "stop_price": None, "take_profit": None,
+            "opened_at": "2026-01-01T00:00:00+00:00", "skill_id": "ts_mom_vol_scaled", "thesis": "x",
+        }},
+        "history": [],
+    }))
+    px = PaperExchange(state_path=state_path, starting_equity=100.0, venue_for_prices="kraken")
+    px.market = _StubMarket()  # type: ignore[assignment]
+
+    payload = json.loads(state_path.read_text())
+    assert "BTC/USDC::ts_mom_vol_scaled" in payload["positions"]
+    assert "BTC/USDC" not in payload["positions"]
+    pos = await px.open_positions()
+    assert len(pos) == 1
+    assert pos[0].symbol == "BTC/USDC" and pos[0].skill_id == "ts_mom_vol_scaled"
+
+
+@pytest.mark.asyncio
 async def test_paper_fees_are_injectable_and_applied(tmp_data_dir: Path):
     """Fees must be configurable (so paper mirrors the real venue, e.g. Hyperliquid
     spot taker = 7 bps, not the old hardcoded 5). With slippage isolated to 0, a

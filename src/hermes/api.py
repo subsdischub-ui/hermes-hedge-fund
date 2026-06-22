@@ -166,6 +166,8 @@ _STRAT1_SKILLS = {
     "intraday_tod_btc", "trend_follow_ema", "mean_reversion_atr",  # incl. legacy history
 }
 _STRAT2_SKILLS = {
+    "funding_squeeze_continuation",  # the validated, live Strategy #2
+    # refuted/retired research candidates kept so any legacy journal rows still attribute
     "weekend_liquidity_fade", "funding_extreme_fade", "vr_antitrend_fade",
     "flow_exhaustion_fade", "cs_residual_reversal",
 }
@@ -207,19 +209,22 @@ def _strategies_ab(closed_rows) -> dict:
             "live": _strategy_stats(s1),
         },
         "strategy_2": {
-            "label": "Diversifiers (orthogonal)",
-            # research until a brick is promotable + live microstructure feed exists
-            "status": "live" if s2 else "research",
+            "label": "Funding squeeze (orthogonal)",
+            # live once funding trades close; "wired" while the feed runs but no trade yet
+            "status": "live" if s2 else "wired",
             "live": _strategy_stats(s2),
-            # Honest status: 8 candidates tested over 2 rounds; the 2 that looked
-            # good on the full 9y (weekend_fade, turn_of_month) BOTH FAILED the
-            # out-of-sample (held-out last-40%) test — in-sample mirages. No
-            # OOS-validated orthogonal brick exists yet.
+            # Honest status: after a systematic ~800-backtest sweep (every
+            # microstructure feature x both directions x horizons {12,24,48} x 3
+            # assets) ONE brick survived the strict coherent gate AND generalized
+            # cross-asset: funding_squeeze_continuation (extreme-positive funding ->
+            # long, ~96h hold). OOS Sharpe ~+1.1, daily-PnL rho to momentum ~0.04.
+            # Now registered live with its own 24-bar hold; trades will populate here.
             "research": {
-                "oos_validated_bricks": 0,
-                "candidates_tested": 8,
-                "note": "8 candidates tested; 0 survived out-of-sample (seasonality decayed). "
-                        "No fake Strategy #2 deployed. Search continues with different data/methods.",
+                "oos_validated_bricks": 1,
+                "candidates_tested": 24,
+                "note": "funding_squeeze_continuation: validated OOS on BTC/ETH/SOL (Sharpe ~+1.1, "
+                        "orthogonal rho~0.04), live funding feed wired. Long-only risk-on sleeve "
+                        "(self-deactivates in deep bear). All other candidates failed cross-asset.",
             },
         },
     }
@@ -293,6 +298,8 @@ _DASHBOARD_HTML = """<!doctype html>
   <span class="sub" id="clock"></span>
 </header>
 <div class="wrap">
+  <div class="card" style="grid-column:1/-1;border-color:#3a4a6a">
+    <h2>Live — what each strategy sees right now</h2><div id="live"></div></div>
   <div class="card"><h2>Equity (paper)</h2><div class="big" id="equity">…</div>
     <div class="sub" id="bankroll"></div></div>
   <div class="card"><h2>Stage gate</h2><div id="gatesum" class="sub"></div><div id="gates"></div></div>
@@ -344,6 +351,30 @@ function renderEq(pts){
     +`<path d="${dp}" fill="none" stroke="${col}" stroke-width="2"/></svg>`
     +`<div class="sub">start $${f(first,2)} → now $${f(last,2)} · ${ys.length-1} closed trades</div>`;
 }
+function renderLive(d){
+  const el=document.getElementById('live'); if(!el) return;
+  const tick=(d.scheduler||[]).find(x=>x.id==='market_tick');
+  const head=`<div class="sub" style="margin-bottom:10px">The agent evaluates all assets every tick. Each sleeve trades ONLY when its gauge is ARMED — otherwise it holds, by design (selective edge).`
+    +(tick?` · next decision <b>${until(tick.next_run)}</b>`:'')+`</div>`;
+  const acts=(d.activity||[]).filter(a=>a.kind==='pulse').slice()
+    .sort((x,y)=>new Date(y.ts)-new Date(x.ts));
+  const bySym={}; for(const a of acts){ if(!bySym[a.symbol]) bySym[a.symbol]=a; }
+  const syms=(d.universe||[]).filter(s=>bySym[s]);
+  if(!syms.length){ el.innerHTML=head+'<div class="muted">no pulse logged yet — waiting for the next heartbeat</div>'; return; }
+  const gbar=g=>{ const pct=Math.max(4,Math.min(100,100*(Number(g.val)/(g.thr||1))));
+    const col=g.armed?'#a6e3a1':'#89b4fa';
+    return `<div style="margin:6px 0"><div class="sub">${esc(g.sleeve)} — ${esc(g.metric)} <b>${f(g.val,2)}</b> / ${f(g.thr,2)} `
+      +(g.armed?'<span class="pill ok">ARMED</span>':'<span class="pill off">holding</span>')+`</div>`
+      +`<div class="bar"><i style="width:${pct}%;background:${col}"></i></div></div>`; };
+  el.innerHTML=head+`<div style="display:flex;gap:16px;flex-wrap:wrap">`
+    +syms.map(sym=>{ const a=bySym[sym]; const gs=a.gauges||[];
+      return `<div style="flex:1;min-width:240px;border:1px solid #2a3346;border-radius:8px;padding:10px 12px">`
+        +`<div style="font-weight:600;color:#fff">${esc(sym)} `
+        +`<span class="muted" style="font-weight:400;font-size:12px">${esc(a.regime||'')} · ER ${f(a.efficiency_ratio,3)}</span></div>`
+        +(gs.length?gs.map(gbar).join(''):'<div class="muted" style="margin-top:6px">no gauges (skill not reporting)</div>')
+        +`<div class="sub" style="margin-top:6px">decision: <b>${esc(a.would_act||'HOLD')}</b> · ${ago(a.ts)}</div>`
+        +`</div>`; }).join('')+`</div>`;
+}
 function renderAB(st){
   const card=s=>{ if(!s) return '';
     const L=s.live||{}, badge=s.status==='live'?'<span class="pill ok">live</span>':'<span class="pill off">research</span>';
@@ -379,6 +410,7 @@ function render(){
   document.getElementById('models').innerHTML=
     `<div>Confidence calibrator <span class="pill ${m.calibrator_fitted?'ok':'off'}">${m.calibrator_fitted?'active':'shadow'}</span></div>`
     +`<div style="margin-top:6px">Meta-labeler <span class="pill ${m.meta_labeler_fitted?'ok':'off'}">${m.meta_labeler_fitted?'active':'shadow'}</span></div>`;
+  renderLive(d);
   renderEq(d.equity_curve);
   renderAB(d.strategies||{});
   const ps=d.open_positions||[];

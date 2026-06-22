@@ -56,14 +56,42 @@ class PaperExchange(Exchange):
         self.market = get_market(venue_for_prices) if venue_for_prices else get_market()
         if state_path.exists():
             self._state = json.loads(state_path.read_text())
+            self._migrate_position_keys()
         else:
             self._state = {
                 "cash_usd": float(starting_equity),
-                "positions": {},   # symbol -> dict
+                # key = "{symbol}::{skill_id}" so two strategies (e.g. momentum #1
+                # and funding #2) can each hold ONE position on the same symbol
+                # concurrently. Each value also stores "symbol" and "skill_id".
+                "positions": {},
                 "history": [],
             }
             self._save()
         self._lock = asyncio.Lock()
+
+    # ---- position-book key (symbol x skill) --------------------------------
+    @staticmethod
+    def _pos_key(symbol: str, skill_id: str | None) -> str:
+        return f"{symbol}::{skill_id or ''}"
+
+    def _migrate_position_keys(self) -> None:
+        """Upgrade a legacy symbol-keyed book to the (symbol, skill) composite key.
+        Idempotent: already-composite keys pass through unchanged."""
+        positions = self._state.get("positions", {})
+        migrated: dict[str, dict] = {}
+        changed = False
+        for k, p in positions.items():
+            if "::" in k:
+                sym, sid = k.split("::", 1)
+            else:
+                sym, sid = k, p.get("skill_id", "")
+                changed = True
+            p["symbol"] = p.get("symbol", sym)
+            p["skill_id"] = p.get("skill_id", sid)
+            migrated[self._pos_key(p["symbol"], p["skill_id"])] = p
+        self._state["positions"] = migrated
+        if changed:
+            self._save()
 
     # ---- persistence -------------------------------------------------------
     def _save(self) -> None:
@@ -97,7 +125,8 @@ class PaperExchange(Exchange):
     # ---- views --------------------------------------------------------------
     async def equity_usd(self) -> float:
         total = float(self._state["cash_usd"])
-        for sym, p in self._state["positions"].items():
+        for p in self._state["positions"].values():
+            sym = p["symbol"]
             px = await self._safe_last_price(sym, fallback=float(p["entry_price"]))
             # For longs (qty>0): inventory worth qty*px is added.
             # For shorts (qty<0): liability is |qty|*px; entry already credited cash,
@@ -115,7 +144,8 @@ class PaperExchange(Exchange):
 
     async def open_positions(self) -> list[Position]:
         out: list[Position] = []
-        for sym, p in self._state["positions"].items():
+        for p in self._state["positions"].values():
+            sym = p["symbol"]
             last = await self._safe_last_price(sym, fallback=float(p["entry_price"]))
             opened_at = p["opened_at"]
             if isinstance(opened_at, str):
@@ -148,11 +178,13 @@ class PaperExchange(Exchange):
             signed_qty = order.qty if order.side == "BUY" else -order.qty
 
             positions = self._state["positions"]
-            pos = positions.get(order.symbol)
+            key = self._pos_key(order.symbol, order.extra.get("skill_id", ""))
+            pos = positions.get(key)
 
             if pos is None:
                 # Fresh position. Cash flow depends on direction.
-                positions[order.symbol] = {
+                positions[key] = {
+                    "symbol": order.symbol,
                     "qty": signed_qty,
                     "entry_price": px,
                     "stop_price": order.stop_price,
@@ -206,7 +238,7 @@ class PaperExchange(Exchange):
                         }
                     )
                     if abs(new_qty) < 1e-12:
-                        positions.pop(order.symbol, None)
+                        positions.pop(key, None)
                     else:
                         # Residual flips to the opposite side. New basis = current px,
                         # stops reset (we will NOT keep the old stop on a flipped side).
@@ -237,13 +269,29 @@ class PaperExchange(Exchange):
         )
         return fill
 
-    async def close_position(self, symbol: str, reason: str) -> Fill | None:
-        pos = self._state["positions"].get(symbol)
-        if not pos:
+    async def close_position(
+        self, symbol: str, reason: str, skill_id: str | None = None
+    ) -> Fill | None:
+        positions = self._state["positions"]
+        if skill_id is not None:
+            # Close the SPECIFIC (symbol, skill) position (the stop watcher path).
+            pos = positions.get(self._pos_key(symbol, skill_id))
+            targets = [pos] if pos else []
+        else:
+            # No skill given -> close every position on this symbol (legacy/manual).
+            targets = [p for p in positions.values() if p.get("symbol") == symbol]
+        if not targets:
             return None
-        side = "SELL" if pos["qty"] > 0 else "BUY"
-        order = Order(symbol=symbol, side=side, qty=abs(float(pos["qty"])), extra={"reason": reason})
-        return await self.place_order(order)
+        last: Fill | None = None
+        for pos in targets:
+            side = "SELL" if pos["qty"] > 0 else "BUY"
+            order = Order(
+                symbol=symbol, side=side, qty=abs(float(pos["qty"])),
+                # carry skill_id so place_order resolves the SAME composite key.
+                extra={"reason": reason, "skill_id": pos.get("skill_id", "")},
+            )
+            last = await self.place_order(order)
+        return last
 
     async def history(self) -> list[dict]:
         return list(self._state["history"])
