@@ -211,13 +211,15 @@ def _strategies_ab(closed_rows) -> dict:
             # research until a brick is promotable + live microstructure feed exists
             "status": "live" if s2 else "research",
             "live": _strategy_stats(s2),
-            # Honest 9y-backtest profile of the lone round-1 survivor.
+            # Honest status: 8 candidates tested over 2 rounds; the 2 that looked
+            # good on the full 9y (weekend_fade, turn_of_month) BOTH FAILED the
+            # out-of-sample (held-out last-40%) test — in-sample mirages. No
+            # OOS-validated orthogonal brick exists yet.
             "research": {
-                "weekend_liquidity_fade": {
-                    "net_bps_per_trade": 20, "ann_sharpe": 0.17,
-                    "rho_to_momentum": -0.00, "trades_9y": 128, "verdict": "kept (weak, orthogonal)",
-                },
-                "note": "4/5 round-1 candidates rejected (net losers 9y); search continues.",
+                "oos_validated_bricks": 0,
+                "candidates_tested": 8,
+                "note": "8 candidates tested; 0 survived out-of-sample (seasonality decayed). "
+                        "No fake Strategy #2 deployed. Search continues with different data/methods.",
             },
         },
     }
@@ -349,10 +351,9 @@ function renderAB(st){
       +`<table><tr><th>live trades</th><td>${L.n||0}</td></tr>`
       +`<tr><th>live win</th><td>${L.win_rate==null?'—':(100*L.win_rate).toFixed(0)+'%'}</td></tr>`
       +`<tr><th>live PnL</th><td class="${cls(L.pnl_usd)}">$${f(L.pnl_usd,3)}</td></tr></table>`;
-    if(s.research){ const r=s.research.weekend_liquidity_fade||{};
-      h+=`<div class="sub" style="margin-top:6px">research (9y backtest) · weekend_fade: `
-        +`${r.net_bps_per_trade}bps/trd · Sharpe ${r.ann_sharpe} · rho ${r.rho_to_momentum} · ${r.trades_9y} trades`
-        +`<br><span class="muted">${esc(s.research.note||'')}</span></div>`; }
+    if(s.research){ const r=s.research;
+      h+=`<div class="sub" style="margin-top:6px">research: ${r.oos_validated_bricks||0} OOS-validated bricks / ${r.candidates_tested||0} tested`
+        +`<br><span class="muted">${esc(r.note||'')}</span></div>`; }
     return h+`</div>`; };
   document.getElementById('ab').innerHTML=
     `<div style="display:flex;gap:20px;flex-wrap:wrap">`+card(st.strategy_1)+card(st.strategy_2)+`</div>`;
