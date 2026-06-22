@@ -156,6 +156,66 @@ def _pos_result():
     return BacktestResult(samples=samples, returns_by_skill={"a": a, "b": b})
 
 
+def test_chrono_ledger_is_time_ordered_single_symbol():
+    from hermes.validation.backtest import run_backtest
+
+    res = run_backtest({"BTC/USDC": _hourly_frame()}, horizon=6, warmup=60)
+    ts_list = [t for t, _ in res.chrono]
+    assert ts_list == sorted(ts_list)
+    assert len(res.chrono) == res.n_trades  # single symbol -> no cross-asset trades
+
+
+def test_chrono_ledger_interleaves_symbols_by_time():
+    # Two symbols on the same hourly grid: a chronological ledger must interleave
+    # them by timestamp. If trades were grouped by symbol (the bug), the second
+    # symbol's timestamps would restart lower and the list would NOT be sorted.
+    from hermes.validation.backtest import run_backtest
+
+    res = run_backtest(
+        {"BTC/USDC": _hourly_frame(), "ETH/USDC": _hourly_frame()}, horizon=6, warmup=60
+    )
+    ts_list = [t for t, _ in res.chrono]
+    assert ts_list == sorted(ts_list)
+    assert len(set(ts_list)) < len(ts_list)  # same grid -> duplicate ts interleaved
+
+
+def test_report_overall_uses_chronological_chrono_ledger():
+    from hermes.validation.backtest import BacktestResult
+    from hermes.validation.report import backtest_report
+
+    # chrono deliberately out of order; report must use it for the overall stats.
+    chrono = [(3, -0.01), (1, 0.02), (2, 0.03)]
+    res = BacktestResult(
+        samples=[], returns_by_skill={"a": [0.02, 0.03], "b": [-0.01]}, chrono=chrono
+    )
+    rep = backtest_report(res)
+    assert rep["overall"]["n"] == 3
+    assert abs(rep["overall"]["mean_ret"] - (0.02 + 0.03 - 0.01) / 3) < 1e-12
+
+
+def test_cross_asset_pairs_aligns_legs_by_timestamp():
+    # ETH history starts one bar later than BTC. Position alignment would pair
+    # BTC[t] with ETH[t] (different wall-clock); a ts merge aligns on common ts.
+    from hermes.validation.backtest import run_backtest
+
+    btc, eth = _btc_eth_cointegrated()
+    base = pd.Timestamp("2018-01-01 00:00", tz="UTC")
+    n = len(btc)
+    ts_full = pd.to_datetime([base + pd.Timedelta(hours=4 * i) for i in range(n)]).values
+    btc = btc.copy()
+    btc["ts"] = ts_full
+    eth = eth.copy()
+    eth["ts"] = ts_full
+    # Drop ETH's first bar -> its row 0 now shares BTC's row 1 timestamp.
+    eth_shifted = eth.iloc[1:].reset_index(drop=True)
+    res = run_backtest(
+        {"BTC/USDC": btc, "ETH/USDC": eth_shifted}, horizon=12, warmup=60, window_cap=300
+    )
+    # Pairs still trades (overlap is large) and every chrono ts is a valid BTC ts.
+    valid = set(int(pd.Timestamp(x).value) for x in btc["ts"])
+    assert all(t in valid for t, _ in res.chrono)
+
+
 def test_report_threads_true_trial_count_and_cpcv():
     from hermes.validation.report import backtest_report
 

@@ -101,7 +101,13 @@ def backtest_report(
         }
         for s in skills
     }
-    pooled = [x for s in skills for x in rbs[s]]
+    # Pooled equity stream MUST be chronological for CPCV/DSR to measure temporal
+    # robustness. Prefer the time-ordered ledger; fall back to skill concatenation
+    # only when it is absent (e.g. hand-built BacktestResult in unit tests).
+    if result.chrono:
+        pooled = [r for _ev, r in sorted(result.chrono, key=lambda x: x[0])]
+    else:
+        pooled = [x for s in skills for x in rbs[s]]
     return {
         "per_skill": per_skill,
         "overall": {

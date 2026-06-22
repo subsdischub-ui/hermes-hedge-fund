@@ -33,10 +33,24 @@ from hermes.validation.triple_barrier import triple_barrier_label
 class BacktestResult:
     samples: list[dict] = field(default_factory=list)
     returns_by_skill: dict[str, list[float]] = field(default_factory=dict)
+    # Chronological ledger of EVERY trade (directional + cross-asset) as
+    # (event_key, ret_net), event_key being the bar timestamp when available
+    # (else a monotonic seq). The report sorts on it so CPCV/DSR see a real
+    # time-ordered equity stream, not skill-grouped concatenation.
+    chrono: list[tuple[int, float]] = field(default_factory=list)
 
     @property
     def n_trades(self) -> int:
         return len(self.samples)
+
+
+def _event_key(df: pd.DataFrame, t: int, fallback: int) -> int:
+    """Chronological sort key for a trade entered at bar ``t``: the bar timestamp
+    (epoch-ns) when the frame carries a ``ts`` column, else a monotonic counter.
+    Using the timestamp makes the ledger globally time-ordered ACROSS symbols."""
+    if "ts" in df.columns:
+        return int(pd.Timestamp(df["ts"].iloc[t]).value)
+    return fallback
 
 
 def _snapshot(df: pd.DataFrame, regime: dict) -> dict:
@@ -80,6 +94,7 @@ def run_backtest(
     round_trip_cost = 2.0 * (fee_bps + slippage_bps) / 10_000.0
     samples: list[dict] = []
     rbs: dict[str, list[float]] = defaultdict(list)
+    chrono: list[tuple[int, float]] = []  # (event_key, ret_net) for every trade
     seq = 0  # monotonic order across (symbol, bar) ~ chronological, for PBO binning
 
     for symbol, df in ohlcv_by_symbol.items():
@@ -121,6 +136,7 @@ def run_backtest(
                     }
                 )
                 rbs[sig.skill_id].append(ret_net)
+                chrono.append((_event_key(df, t, seq), ret_net))
                 seq += 1
 
     # Cross-asset skills (e.g. ETH-BTC pairs): a separate, time-aligned pass over
@@ -131,16 +147,43 @@ def run_backtest(
     # would pollute the directional confidence calibrator — but they do feed the
     # per-skill / overall return report (DSR, CPCV).
     _run_cross_asset(
-        ohlcv_by_symbol, lib, rbs, round_trip_cost, horizon, warmup, step, window_cap
+        ohlcv_by_symbol, lib, rbs, chrono, round_trip_cost, horizon, warmup, step, window_cap
     )
 
-    return BacktestResult(samples=samples, returns_by_skill=dict(rbs))
+    # Trades were appended per-symbol then by the cross-asset pass; sort into a
+    # single globally time-ordered ledger so the report's CPCV/DSR see real time.
+    chrono.sort(key=lambda x: x[0])
+    return BacktestResult(samples=samples, returns_by_skill=dict(rbs), chrono=chrono)
+
+
+def _align_legs(btc: pd.DataFrame, eth: pd.DataFrame) -> pd.DataFrame:
+    """Align the two legs bar-for-bar. When both carry a ``ts`` column, INNER-JOIN
+    on it so each spread reads BTC and ETH from the SAME wall-clock bar (different
+    start dates or internal gaps no longer silently pair mismatched bars). Without
+    timestamps (synthetic fixtures) fall back to positional alignment by min length.
+    Returns a frame with columns ts (if any), btc_close, eth_close."""
+    if "ts" in btc.columns and "ts" in eth.columns:
+        m = pd.merge(
+            btc[["ts", "close"]].rename(columns={"close": "btc_close"}),
+            eth[["ts", "close"]].rename(columns={"close": "eth_close"}),
+            on="ts",
+            how="inner",
+        ).sort_values("ts").reset_index(drop=True)
+        return m
+    n = min(len(btc), len(eth))
+    return pd.DataFrame(
+        {
+            "btc_close": btc["close"].to_numpy(dtype=float)[:n],
+            "eth_close": eth["close"].to_numpy(dtype=float)[:n],
+        }
+    )
 
 
 def _run_cross_asset(
     ohlcv_by_symbol: dict[str, pd.DataFrame],
     lib,
     rbs: dict[str, list[float]],
+    chrono: list[tuple[int, float]],
     round_trip_cost: float,
     horizon: int,
     warmup: int,
@@ -149,15 +192,20 @@ def _run_cross_asset(
 ) -> None:
     if not ({"BTC/USDC", "ETH/USDC"} <= set(ohlcv_by_symbol)):
         return
-    btc = ohlcv_by_symbol["BTC/USDC"].reset_index(drop=True)
-    eth = ohlcv_by_symbol["ETH/USDC"].reset_index(drop=True)
-    n = min(len(btc), len(eth))
-    btc_c = btc["close"].to_numpy(dtype=float)[:n]
-    eth_c = eth["close"].to_numpy(dtype=float)[:n]
+    aligned = _align_legs(
+        ohlcv_by_symbol["BTC/USDC"].reset_index(drop=True),
+        ohlcv_by_symbol["ETH/USDC"].reset_index(drop=True),
+    )
+    n = len(aligned)
+    btc_c = aligned["btc_close"].to_numpy(dtype=float)
+    eth_c = aligned["eth_close"].to_numpy(dtype=float)
+    # Minimal per-leg frames carrying only what pairs_eth_btc reads (close).
+    btc_leg = pd.DataFrame({"close": btc_c})
+    eth_leg = pd.DataFrame({"close": eth_c})
 
     for t in range(warmup, n - 1, max(1, step)):
         lo = max(0, t + 1 - window_cap) if window_cap > 0 else 0
-        ctx = {"BTC/USDC": btc.iloc[lo : t + 1], "ETH/USDC": eth.iloc[lo : t + 1]}
+        ctx = {"BTC/USDC": btc_leg.iloc[lo : t + 1], "ETH/USDC": eth_leg.iloc[lo : t + 1]}
         for sig in lib.evaluate_cross_asset(ctx):
             if sig.side == "HOLD":
                 continue
@@ -172,4 +220,7 @@ def _run_cross_asset(
             if sig.side == "SELL":  # short the spread
                 spread_ret = -spread_ret
             cost = round_trip_cost * (1.0 + abs(hedge))  # both legs traded
-            rbs[sig.skill_id].append(float(spread_ret - cost))
+            ret_net = float(spread_ret - cost)
+            rbs[sig.skill_id].append(ret_net)
+            ev = int(pd.Timestamp(aligned["ts"].iloc[t]).value) if "ts" in aligned.columns else t
+            chrono.append((ev, ret_net))
