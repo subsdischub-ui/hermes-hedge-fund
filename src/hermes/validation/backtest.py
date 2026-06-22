@@ -79,6 +79,9 @@ def run_backtest(
     step: int = 1,
     window_cap: int = 0,
     regime_gate: bool = False,
+    conviction_min: float = 0.0,
+    no_overlap: bool = False,
+    skills_allowlist: set[str] | None = None,
 ) -> BacktestResult:
     """Replay the engine. ``window_cap`` (>0) bounds the trailing slice fed to the
     skills each bar — since every skill is causal and reads at most ~200 trailing
@@ -89,12 +92,21 @@ def run_backtest(
     routed with hysteresis and a per-symbol signal is recorded only if its skill
     is in the active set for that regime (trend→{ts_mom,breakout}, range→
     {mean_reversion_regime}, always-on→{pairs,intraday}). This isolates the value
-    of the regime router vs. trading every skill unconditionally."""
+    of the regime router vs. trading every skill unconditionally.
+
+    Selectivity / turnover levers (the "fewer, higher-impact trades" thesis):
+    ``conviction_min`` drops any signal whose confidence is below it (trade only
+    the strong tail); ``no_overlap`` consolidates the per-bar re-entry into ONE
+    position per move — a (symbol, skill) cannot re-enter until ``horizon`` bars
+    after its last entry, so a run of identical signals becomes a single held
+    position that pays fees once, not every bar; ``skills_allowlist`` restricts
+    the active slate (e.g. drop skills that lose even gross)."""
     lib = get_skill_library()
     round_trip_cost = 2.0 * (fee_bps + slippage_bps) / 10_000.0
     samples: list[dict] = []
     rbs: dict[str, list[float]] = defaultdict(list)
     chrono: list[tuple[int, float]] = []  # (event_key, ret_net) for every trade
+    busy_until: dict[tuple[str, str], int] = {}  # (symbol, skill) -> next free bar
     seq = 0  # monotonic order across (symbol, bar) ~ chronological, for PBO binning
 
     for symbol, df in ohlcv_by_symbol.items():
@@ -118,8 +130,16 @@ def run_backtest(
             for sig in lib.evaluate_for_symbol(symbol, window):
                 if sig.side == "HOLD":
                     continue
+                if skills_allowlist is not None and sig.skill_id not in skills_allowlist:
+                    continue
                 if active is not None and sig.skill_id not in active:
                     continue  # regime router excludes this skill in this regime
+                if sig.confidence < conviction_min:
+                    continue  # selectivity: trade only the high-conviction tail
+                if no_overlap and t < busy_until.get((symbol, sig.skill_id), -1):
+                    continue  # already holding a position from this skill on this symbol
+                if no_overlap:
+                    busy_until[(symbol, sig.skill_id)] = t + horizon
                 _, gross = triple_barrier_label(
                     highs, lows, closes, t, closes[t], sig.side,
                     sig.stop_pct, sig.take_profit_pct, horizon,
@@ -128,6 +148,7 @@ def run_backtest(
                 samples.append(
                     {
                         "features": meta_features(snap, sig.confidence),
+                        "t": t,
                         "confidence": float(sig.confidence),
                         "outcome": 1 if ret_net > 0 else 0,
                         "ret_net": ret_net,
@@ -146,9 +167,10 @@ def run_backtest(
     # do NOT enter the model-bootstrap `samples` set — pairs is market-neutral and
     # would pollute the directional confidence calibrator — but they do feed the
     # per-skill / overall return report (DSR, CPCV).
-    _run_cross_asset(
-        ohlcv_by_symbol, lib, rbs, chrono, round_trip_cost, horizon, warmup, step, window_cap
-    )
+    if skills_allowlist is None or "pairs_eth_btc" in skills_allowlist:
+        _run_cross_asset(
+            ohlcv_by_symbol, lib, rbs, chrono, round_trip_cost, horizon, warmup, step, window_cap
+        )
 
     # Trades were appended per-symbol then by the cross-asset pass; sort into a
     # single globally time-ordered ledger so the report's CPCV/DSR see real time.

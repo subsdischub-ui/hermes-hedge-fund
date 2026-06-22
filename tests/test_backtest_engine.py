@@ -69,6 +69,41 @@ def test_regime_gate_is_subset_and_keeps_trend_skill_in_trend():
     )
 
 
+def test_skills_allowlist_restricts_active_skills():
+    res = run_backtest(
+        {"BTC/USDC": _trend_df(420)}, horizon=12, warmup=60, window_cap=350,
+        skills_allowlist={"ts_mom_vol_scaled"},
+    )
+    assert set(res.returns_by_skill) <= {"ts_mom_vol_scaled"}
+
+
+def test_conviction_min_keeps_only_high_confidence_trades():
+    data = {"BTC/USDC": _trend_df(420)}
+    base = run_backtest(
+        data, horizon=12, warmup=60, window_cap=350, skills_allowlist={"ts_mom_vol_scaled"}
+    )
+    sel = run_backtest(
+        data, horizon=12, warmup=60, window_cap=350,
+        skills_allowlist={"ts_mom_vol_scaled"}, conviction_min=0.95,
+    )
+    assert sel.n_trades <= base.n_trades
+    assert all(s["confidence"] >= 0.95 for s in sel.samples)
+
+
+def test_no_overlap_consolidates_into_one_position_per_holding_window():
+    # The user's insight: collapse the per-bar re-entry into one position per move.
+    # With no_overlap, a skill cannot re-enter (same symbol) until `horizon` bars
+    # after its last entry — so consecutive entries are spaced >= horizon.
+    res = run_backtest(
+        {"BTC/USDC": _trend_df(420)}, horizon=12, warmup=60, window_cap=350,
+        skills_allowlist={"ts_mom_vol_scaled"}, no_overlap=True,
+    )
+    entries = sorted(s["t"] for s in res.samples if s["skill_id"] == "ts_mom_vol_scaled")
+    gaps = [b - a for a, b in zip(entries, entries[1:])]
+    assert entries  # it still trades
+    assert all(g >= 12 for g in gaps)
+
+
 def test_window_cap_matches_full_history_when_cap_exceeds_lookback():
     # Skills are causal and read only a trailing window (<=200 bars: MA200 etc.).
     # Capping the per-bar slice to >= that lookback must yield identical trades —
