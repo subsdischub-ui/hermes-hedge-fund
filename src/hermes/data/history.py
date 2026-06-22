@@ -20,6 +20,22 @@ from typing import Any, Protocol, runtime_checkable
 import pandas as pd
 
 _COLS = ["ts", "open", "high", "low", "close", "volume"]
+
+# Per-bar microstructure (order-flow) columns for Strategy #2. Maps the canonical
+# snake_case name we expose -> the raw Binance-kline header in linxy/CryptoCoin.
+# These are OPTIONAL: older/partial CSVs may omit them, so the loader keeps only
+# the ones actually present rather than hard-failing. The LIVE path must surface
+# the same canonical names (see hermes.data.market.MarketData.ohlcv).
+_MICRO_SOURCE = {
+    "quote_asset_volume": "Quote asset volume",
+    "num_trades": "Number of trades",
+    "taker_buy_base": "Taker buy base asset volume",
+    "taker_buy_quote": "Taker buy quote asset volume",
+}
+_MICRO_COLS = list(_MICRO_SOURCE)  # canonical names, in stable order
+# num_trades is an integer count; the three volume columns are continuous.
+_MICRO_DTYPES = {c: ("int64" if c == "num_trades" else "float64") for c in _MICRO_COLS}
+
 _GAP_FACTOR = 1.5  # an inter-bar delta above 1.5x the timeframe counts as a gap
 
 
@@ -119,14 +135,20 @@ def normalize_hf_klines(raw: pd.DataFrame) -> pd.DataFrame:
     """Normalise linxy/CryptoCoin Binance-kline rows to the canonical OHLCV frame.
 
     The dataset's ``Open time`` is a UTC datetime string; convert it to epoch-ms
-    (matching the rest of this module), keep only the canonical columns, then
-    dedup on timestamp (keep first) and sort ascending. No look-ahead: this only
+    (matching the rest of this module), keep the canonical OHLCV columns plus
+    whichever microstructure columns (``_MICRO_COLS``) are present, then dedup on
+    timestamp (keep first) and sort ascending. Missing micro columns are skipped,
+    not an error, so older OHLCV-only files still load. No look-ahead: this only
     reshapes already-closed candles.
     """
     df = raw.copy()
     ts = pd.to_datetime(df["Open time"], utc=True)
     df["ts"] = (ts.astype("int64") // 1_000_000).astype("int64")
-    df = df[_COLS]
+    # Retain only the micro columns actually present, renamed + cast canonically.
+    present = [c for c in _MICRO_COLS if _MICRO_SOURCE[c] in raw.columns]
+    for c in present:
+        df[c] = df[_MICRO_SOURCE[c]].astype(_MICRO_DTYPES[c])
+    df = df[_COLS + present]
     return df.drop_duplicates(subset="ts").sort_values("ts").reset_index(drop=True)
 
 
@@ -160,6 +182,12 @@ def save_history(df: pd.DataFrame, path: str | os.PathLike[str]) -> None:
 
 
 def load_history(path: str | os.PathLike[str]) -> pd.DataFrame:
-    """Load OHLCV history from CSV, preserving the canonical column order."""
+    """Load history from CSV in canonical order: OHLCV plus any microstructure
+    columns present. Older OHLCV-only files load unchanged; when micro columns
+    exist they are re-cast to their canonical dtypes so downstream code is stable.
+    """
     df = pd.read_csv(path)
-    return df[_COLS]
+    present = [c for c in _MICRO_COLS if c in df.columns]
+    for c in present:
+        df[c] = df[c].astype(_MICRO_DTYPES[c])
+    return df[_COLS + present]

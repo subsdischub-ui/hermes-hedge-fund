@@ -20,6 +20,8 @@ from hermes.data.history import (
 
 _TF_MS = 3_600_000  # 1h in ms
 _COLS = ["ts", "open", "high", "low", "close", "volume"]
+# Canonical snake_case names for the per-bar microstructure columns (Strategy #2).
+_MICRO_COLS = ["quote_asset_volume", "num_trades", "taker_buy_base", "taker_buy_quote"]
 
 
 def _bar(ts: int) -> list[float]:
@@ -135,7 +137,11 @@ def test_normalize_hf_klines_maps_open_time_to_ms_and_selects_cols():
         }
     )
     out = normalize_hf_klines(raw)
-    assert list(out.columns) == _COLS
+    # Only "Number of trades" of the micro columns is present here, so the loader
+    # retains exactly num_trades alongside OHLCV (partial-micro guard).
+    assert list(out.columns) == [*_COLS, "num_trades"]
+    assert int(out["num_trades"].iloc[0]) == 334
+    assert out["num_trades"].dtype == "int64"
     # 2017-08-17 04:00:00 UTC == 1502942400000 ms.
     assert int(out["ts"].iloc[0]) == 1_502_942_400_000
     assert int(out["ts"].iloc[1]) == 1_502_942_400_000 + 4 * _TF_MS
@@ -167,6 +173,59 @@ def test_normalize_hf_klines_dedups_and_sorts():
     assert float(out["close"].iloc[1]) == 2.0
 
 
+def test_normalize_hf_klines_retains_microstructure_columns():
+    """A full 12-column Binance-kline frame keeps the 4 microstructure columns,
+    renamed to canonical snake_case with the right dtypes (Strategy #2 inputs)."""
+    raw = pd.DataFrame(
+        {
+            "Open time": ["2017-08-17 04:00:00", "2017-08-17 08:00:00"],
+            "open": [4261.48, 4333.32],
+            "high": [4349.99, 4485.39],
+            "low": [4261.32, 4333.32],
+            "close": [4349.99, 4427.30],
+            "volume": [82.088865, 63.619882],
+            "Close time": ["2017-08-17 07:59:59.999", "2017-08-17 11:59:59.999"],
+            "Quote asset volume": [350000.5, 280000.25],
+            "Number of trades": [334, 200],
+            "Taker buy base asset volume": [40.5, 30.25],
+            "Taker buy quote asset volume": [175000.5, 140000.75],
+            "Ignore": [0, 0],
+        }
+    )
+    out = normalize_hf_klines(raw)
+    # OHLCV first, then the micro columns in canonical order.
+    assert list(out.columns) == _COLS + _MICRO_COLS
+    # Values carried through under their new names.
+    assert float(out["quote_asset_volume"].iloc[0]) == 350000.5
+    assert int(out["num_trades"].iloc[1]) == 200
+    assert float(out["taker_buy_base"].iloc[0]) == 40.5
+    assert float(out["taker_buy_quote"].iloc[1]) == 140000.75
+    # Dtypes: trade count is an integer; the three volumes are float64.
+    assert out["num_trades"].dtype == "int64"
+    assert out["quote_asset_volume"].dtype == "float64"
+    assert out["taker_buy_base"].dtype == "float64"
+    assert out["taker_buy_quote"].dtype == "float64"
+
+
+def test_normalize_hf_klines_without_microstructure_returns_ohlcv():
+    """Older/partial files lacking the micro columns still yield a clean OHLCV frame
+    (the loader must not hard-fail when a microstructure column is absent)."""
+    raw = pd.DataFrame(
+        {
+            "Open time": ["2017-08-17 04:00:00", "2017-08-17 08:00:00"],
+            "open": [4261.48, 4333.32],
+            "high": [4349.99, 4485.39],
+            "low": [4261.32, 4333.32],
+            "close": [4349.99, 4427.30],
+            "volume": [82.088865, 63.619882],
+        }
+    )
+    out = normalize_hf_klines(raw)
+    assert list(out.columns) == _COLS
+    assert int(out["ts"].iloc[0]) == 1_502_942_400_000
+    assert out["ts"].is_monotonic_increasing
+
+
 def test_save_load_round_trip(tmp_path):
     df = pd.DataFrame([_bar(t) for t in range(0, 20 * _TF_MS, _TF_MS)], columns=_COLS)
     path = tmp_path / "BTC_USDC_1h.csv"
@@ -174,3 +233,30 @@ def test_save_load_round_trip(tmp_path):
     loaded = load_history(path)
     assert list(loaded.columns) == _COLS
     pd.testing.assert_frame_equal(loaded.reset_index(drop=True), df.reset_index(drop=True))
+
+
+def test_save_load_round_trip_preserves_microstructure(tmp_path):
+    """Cached HF history keeps its micro columns + dtypes across CSV save/load,
+    so Strategy #2 can read them straight from disk."""
+    n = 5
+    df = pd.DataFrame(
+        {
+            "ts": [i * _TF_MS for i in range(n)],
+            "open": [1.0] * n,
+            "high": [1.0] * n,
+            "low": [1.0] * n,
+            "close": [1.0] * n,
+            "volume": [9.0] * n,
+            "quote_asset_volume": [100.5 + i for i in range(n)],
+            "num_trades": [10 + i for i in range(n)],
+            "taker_buy_base": [4.0 + i for i in range(n)],
+            "taker_buy_quote": [50.5 + i for i in range(n)],
+        }
+    )
+    path = tmp_path / "BTC_USDC_1h.csv"
+    save_history(df, path)
+    loaded = load_history(path)
+    assert list(loaded.columns) == _COLS + _MICRO_COLS
+    assert loaded["num_trades"].dtype == "int64"
+    assert loaded["quote_asset_volume"].dtype == "float64"
+    pd.testing.assert_frame_equal(loaded, df)
