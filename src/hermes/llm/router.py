@@ -59,12 +59,43 @@ class LLMTarget:
         return bool(self.base_url and self.model)
 
 
+# DeepSeek V4 (OpenAI-compatible). Verified IDs (api-docs.deepseek.com): the
+# legacy deepseek-chat/reasoner are deprecated 2026-07-24 in favour of these.
+DEEPSEEK = {
+    "base_url": "https://api.deepseek.com",
+    "primary": "deepseek-v4-pro",
+    "secondary": "deepseek-v4-flash",
+    "escalation": "deepseek-v4-pro",
+}
+
+
+def resolve_targets(
+    local: dict[Target, LLMTarget], deepseek_key: str, cfg: dict
+) -> tuple[dict[Target, LLMTarget], dict[Target, LLMTarget], bool]:
+    """Pick the active LLM targets + fallback set.
+
+    With a DeepSeek key, primary/secondary/escalation point to DeepSeek V4 and the
+    LOCAL targets become the fallback (used automatically if DeepSeek is
+    unreachable) — so the agent runs 24/7 off the Mac but degrades gracefully.
+    Without a key, the local targets are used as-is and there is no fallback.
+    Returns ``(active, fallback, deepseek_active)``.
+    """
+    if not deepseek_key.strip():
+        return local, {}, False
+    active: dict[Target, LLMTarget] = {
+        "primary": LLMTarget("primary", cfg["base_url"], cfg["primary"], deepseek_key),
+        "secondary": LLMTarget("secondary", cfg["base_url"], cfg["secondary"], deepseek_key),
+        "escalation": LLMTarget("escalation", cfg["base_url"], cfg["escalation"], deepseek_key),
+    }
+    return active, dict(local), True
+
+
 class LLMRouter:
     """Routes chat/tool calls to the configured LLM target."""
 
     def __init__(self) -> None:
         s = get_settings()
-        self.targets: dict[Target, LLMTarget] = {
+        local: dict[Target, LLMTarget] = {
             "primary": LLMTarget(
                 "primary",
                 s.llm_primary_base_url,
@@ -84,14 +115,22 @@ class LLMRouter:
                 _reveal(s.llm_escalation_api_key),
             ),
         }
+        self.targets, self.fallback_targets, self.deepseek_active = resolve_targets(
+            local, _reveal(s.deepseek_api_key), DEEPSEEK
+        )
+        if self.deepseek_active:
+            log.info("llm_router_deepseek_active", primary=DEEPSEEK["primary"], fallback="local")
         self._agent_targets = s.yaml("agents", default={}) or {}
-        self._clients: dict[Target, AsyncOpenAI] = {}
+        self._clients: dict[str, AsyncOpenAI] = {}
+
+    def _client_for(self, tgt: LLMTarget) -> AsyncOpenAI:
+        key = f"{tgt.name}@{tgt.base_url}"
+        if key not in self._clients:
+            self._clients[key] = AsyncOpenAI(base_url=tgt.base_url, api_key=tgt.api_key or "x")
+        return self._clients[key]
 
     def _client(self, t: Target) -> AsyncOpenAI:
-        if t not in self._clients:
-            tgt = self.targets[t]
-            self._clients[t] = AsyncOpenAI(base_url=tgt.base_url, api_key=tgt.api_key or "x")
-        return self._clients[t]
+        return self._client_for(self.targets[t])
 
     def resolve(self, agent_role: str) -> Target:
         wanted: Target = self._agent_targets.get(agent_role, "primary")
@@ -111,21 +150,34 @@ class LLMRouter:
         response_format: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         target = self.resolve(agent_role)
-        client = self._client(target)
-        model = self.targets[target].model
-
-        kwargs: dict[str, Any] = {
-            "model": model,
+        base_kwargs: dict[str, Any] = {
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
         if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
+            base_kwargs["tools"] = tools
+            base_kwargs["tool_choice"] = "auto"
         if response_format:
-            kwargs["response_format"] = response_format
+            base_kwargs["response_format"] = response_format
 
+        try:
+            return await self._do_call(self.targets[target], base_kwargs, agent_role)
+        except _RETRY_EXCEPTIONS as e:
+            fb = self.fallback_targets.get(target)
+            if fb and fb.configured:
+                # DeepSeek unreachable -> degrade to the local llama.cpp fallback.
+                log.warning(
+                    "llm_fallback_to_local", agent=agent_role, from_target=target, error=str(e)
+                )
+                return await self._do_call(fb, base_kwargs, agent_role)
+            raise
+
+    async def _do_call(
+        self, tgt: LLMTarget, base_kwargs: dict[str, Any], agent_role: str
+    ) -> dict[str, Any]:
+        client = self._client_for(tgt)
+        kwargs = {**base_kwargs, "model": tgt.model}
         async for attempt in AsyncRetrying(
             stop=stop_after_attempt(3),
             wait=wait_exponential(multiplier=1, min=1, max=8),
@@ -136,13 +188,14 @@ class LLMRouter:
                 try:
                     resp = await client.chat.completions.create(**kwargs)
                 except APIStatusError as e:
-                    # Don't retry 4xx. Surface immediately so callers see real errors.
+                    # Don't retry 4xx. Surface immediately so callers see real errors
+                    # (e.g. a bad DeepSeek key) instead of silently falling back.
                     log.warning(
                         "llm_status_error",
                         agent=agent_role,
                         status=getattr(e, "status_code", None),
-                        target=target,
-                        model=model,
+                        target=tgt.name,
+                        model=tgt.model,
                     )
                     raise
                 choice = resp.choices[0]
@@ -158,8 +211,8 @@ class LLMRouter:
                     ],
                     "finish_reason": choice.finish_reason,
                     "usage": resp.usage.model_dump() if resp.usage else {},
-                    "target": target,
-                    "model": model,
+                    "target": tgt.name,
+                    "model": tgt.model,
                 }
         raise RuntimeError("unreachable")
 

@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     llm_escalation_base_url: str = Field("", alias="LLM_ESCALATION_BASE_URL")
     llm_escalation_model: str = Field("", alias="LLM_ESCALATION_MODEL")
     llm_escalation_api_key: SecretStr = Field(SecretStr(""), alias="LLM_ESCALATION_API_KEY")
+    # When set, the router uses DeepSeek (V4 Pro primary / Flash secondary) and
+    # keeps the local llama.cpp targets above as automatic fallback. 24/7 off-Mac.
+    deepseek_api_key: SecretStr = Field(SecretStr(""), alias="DEEPSEEK_API_KEY")
 
     # TRM
     trm_enabled: bool = Field(True, alias="TRM_ENABLED")
