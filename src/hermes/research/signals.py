@@ -173,3 +173,34 @@ def flow_exhaustion_fade(df: pd.DataFrame) -> SkillSignal:
         sid, side, conf, max(0.005, 1.5 * atrpct), max(0.005, 1.0 * atrpct),
         f"flow exhaustion ofz={ofz:.2f} atsz={atsz:.2f} z={z:.2f}", {"ofz": ofz, "z": z},
     )
+
+
+# --------------------------------------------------------------------------- #
+# #funding funding_extreme_fade — fade an extreme funding rate (crowd over-
+#    positioned) and earn the carry while waiting for the squeeze. Needs a
+#    funding_rate column (attach via hermes.research.funding.attach_funding).
+#    Most defensible orthogonality: funding is exogenous to the price path.
+# --------------------------------------------------------------------------- #
+_FUND_WIN = 180
+_FUND_Z = 2.0
+
+
+def funding_extreme_fade(df: pd.DataFrame) -> SkillSignal:
+    sid = "funding_extreme_fade"
+    if "funding_rate" not in df.columns or len(df) < _FUND_WIN + 1:
+        return _hold(sid, "missing funding_rate / insufficient history")
+    fz = _ztail(df["funding_rate"], _FUND_WIN)
+    atrpct = float(_atr_pct(df).tail(14).mean())
+    if not (np.isfinite(atrpct) and atrpct > 0):
+        atrpct = 0.02
+    if fz >= _FUND_Z:
+        side = "SELL"           # funding very positive: longs crowded -> fade down
+    elif fz <= -_FUND_Z:
+        side = "BUY"            # funding very negative: shorts crowded -> fade up
+    else:
+        return _hold(sid, f"funding z={fz:.2f}")
+    conf = min(1.0, abs(fz) / 3.0) * 0.6
+    return SkillSignal(
+        sid, side, conf, max(0.005, 3.0 * atrpct), max(0.005, 2.0 * atrpct),
+        f"funding extreme z={fz:.2f} -> fade + carry", {"funding_z": fz},
+    )

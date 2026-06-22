@@ -147,3 +147,38 @@ def test_flow_exhaustion_fade_holds_without_flow_extreme():
     from hermes.research.signals import flow_exhaustion_fade
 
     assert flow_exhaustion_fade(_flow_df(stretch_up=True, ofi_extreme=False)).side == "HOLD"
+
+
+# ----------------------------- funding ------------------------------------- #
+def test_attach_funding_asof_backward_no_lookahead():
+    from hermes.research.funding import attach_funding
+
+    ohlcv = pd.DataFrame({"ts": [100, 200, 300], "close": [1.0, 2.0, 3.0]})
+    funding = pd.DataFrame({"ts": [150, 250], "funding_rate": [0.01, -0.02]})
+    out = attach_funding(ohlcv, funding)
+    assert list(out["funding_rate"]) == [0.0, 0.01, -0.02]  # bar 100 pre-funding -> 0
+
+
+def test_funding_extreme_fade_shorts_high_funding():
+    from hermes.research.signals import funding_extreme_fade
+
+    n = 200
+    rng = np.random.default_rng(2)
+    fr = rng.standard_normal(n) * 0.0001
+    fr[-1] = 0.02  # extreme positive funding -> crowd long -> fade SHORT
+    close = np.full(n, 100.0) + rng.standard_normal(n) * 0.1
+    df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
+                       "funding_rate": fr})
+    assert funding_extreme_fade(df).side == "SELL"
+
+
+def test_funding_extreme_fade_holds_when_neutral():
+    from hermes.research.signals import funding_extreme_fade
+
+    n = 200
+    rng = np.random.default_rng(5)
+    fr = rng.standard_normal(n) * 0.0001  # no extreme
+    close = np.full(n, 100.0) + rng.standard_normal(n) * 0.1
+    df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
+                       "funding_rate": fr})
+    assert funding_extreme_fade(df).side == "HOLD"
