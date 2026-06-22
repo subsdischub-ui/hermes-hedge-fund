@@ -112,7 +112,8 @@ async def dashboard_data() -> dict[str, Any]:
     positions = await ex.open_positions()
     journal = TradeJournal()
     stats = await journal.stats()
-    recent = (await journal.recent_closed(since=datetime.now(UTC) - timedelta(days=120)))[:20]
+    all_closed = await journal.recent_closed(since=datetime.now(UTC) - timedelta(days=365))
+    recent = all_closed[:20]
     report = StageManager().evaluate(
         {"live_trades": stats["count"], "paper_trades": stats["count"], "rule_violations": 0}
     )
@@ -146,6 +147,8 @@ async def dashboard_data() -> dict[str, Any]:
         "models": {"calibrator_fitted": cal.is_fitted, "meta_labeler_fitted": ml.is_fitted},
         "breakdown": await journal.breakdown(),
         "activity": _recent_activity(s),
+        "equity_curve": _equity_curve(all_closed, s.bankroll_usd, equity),
+        "strategies": _strategies_ab(all_closed),
         "server_time": datetime.now(UTC).isoformat(),
     }
 
@@ -155,6 +158,69 @@ def _recent_activity(s, n: int = 30) -> list[dict]:
     from hermes.runtime.activity import ActivityLog
 
     return ActivityLog(s.data_dir / "activity.json").recent(n)
+
+
+# Strategy attribution: which skill belongs to which live/research strategy.
+_STRAT1_SKILLS = {
+    "ts_mom_vol_scaled", "breakout_vol_expansion", "mean_reversion_regime",
+    "intraday_tod_btc", "trend_follow_ema", "mean_reversion_atr",  # incl. legacy history
+}
+_STRAT2_SKILLS = {
+    "weekend_liquidity_fade", "funding_extreme_fade", "vr_antitrend_fade",
+    "flow_exhaustion_fade", "cs_residual_reversal",
+}
+
+
+def _equity_curve(closed_rows, start_equity: float, current_equity: float) -> list[dict]:
+    """Cumulative realised-PnL equity curve from closed trades (oldest->newest)."""
+    rows = sorted(
+        (r for r in closed_rows if r.closed_at is not None), key=lambda r: r.closed_at
+    )
+    eq = float(start_equity)
+    pts = [{"t": None, "eq": eq}]
+    for r in rows:
+        eq += float(r.pnl_usd or 0.0)
+        pts.append({"t": r.closed_at.isoformat(), "eq": round(eq, 4)})
+    return pts
+
+
+def _strategy_stats(rows) -> dict:
+    pnl = [float(r.pnl_usd or 0.0) for r in rows]
+    n = len(pnl)
+    wins = sum(1 for p in pnl if p > 0)
+    return {
+        "n": n,
+        "pnl_usd": round(sum(pnl), 4),
+        "win_rate": round(wins / n, 3) if n else None,
+    }
+
+
+def _strategies_ab(closed_rows) -> dict:
+    """Side-by-side A/B: Strategy #1 (momentum) LIVE from the journal, Strategy #2
+    (diversifiers) — its live trades if any, plus the honest research status."""
+    s1 = [r for r in closed_rows if (r.skill_id or "") in _STRAT1_SKILLS]
+    s2 = [r for r in closed_rows if (r.skill_id or "") in _STRAT2_SKILLS]
+    return {
+        "strategy_1": {
+            "label": "Momentum (selective)",
+            "status": "live",
+            "live": _strategy_stats(s1),
+        },
+        "strategy_2": {
+            "label": "Diversifiers (orthogonal)",
+            # research until a brick is promotable + live microstructure feed exists
+            "status": "live" if s2 else "research",
+            "live": _strategy_stats(s2),
+            # Honest 9y-backtest profile of the lone round-1 survivor.
+            "research": {
+                "weekend_liquidity_fade": {
+                    "net_bps_per_trade": 20, "ann_sharpe": 0.17,
+                    "rho_to_momentum": -0.00, "trades_9y": 128, "verdict": "kept (weak, orthogonal)",
+                },
+                "note": "4/5 round-1 candidates rejected (net losers 9y); search continues.",
+            },
+        },
+    }
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -232,7 +298,17 @@ _DASHBOARD_HTML = """<!doctype html>
   <div class="card"><h2>Models</h2><div id="models"></div>
     <div class="sub" style="margin-top:8px">Identity/shadow until enough two-class trades.</div></div>
   <div class="card" style="grid-column:1/-1"><h2>Open positions</h2><div id="positions"></div></div>
-  <div class="card" style="grid-column:1/-1"><h2>Agent activity (live — ticks &amp; hourly pulses)</h2><div id="activity"></div></div>
+  <div class="card" style="grid-column:1/-1"><h2>Equity curve (paper, realised)</h2><div id="eqchart"></div></div>
+  <div class="card" style="grid-column:1/-1"><h2>Strategies — A/B (side by side)</h2><div id="ab"></div></div>
+  <div class="card" style="grid-column:1/-1">
+    <h2>Agent activity (live — ticks &amp; hourly pulses)</h2>
+    <div style="margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+      <input id="actfilter" placeholder="filter (symbol, skill, reason…)" oninput="render()"
+        style="background:#0b0e14;border:1px solid #2a3346;color:#cdd6f4;border-radius:6px;padding:4px 8px;font:13px sans-serif"/>
+      <label class="sub" style="cursor:pointer"><input type="checkbox" id="hidehold" onchange="render()"/> hide HOLD pulses</label>
+    </div>
+    <div id="activity"></div>
+  </div>
   <div class="card" style="grid-column:1/-1"><h2>By asset / by skill (watch the SOL lean)</h2><div id="breakdown"></div></div>
   <div class="card" style="grid-column:1/-1"><h2>Recent closed trades (rhythm)</h2><div id="trades"></div></div>
   <div class="card" style="grid-column:1/-1"><h2>Work cycle — next scheduled runs</h2><div id="sched"></div></div>
@@ -248,9 +324,41 @@ const ago=iso=>{if(!iso)return'—';const s=(Date.now()-new Date(iso))/1000;
 const until=iso=>{if(!iso)return'—';const s=(new Date(iso)-Date.now())/1000;
   if(s<0)return'due';if(s<60)return'in '+Math.round(s)+'s';if(s<3600)return'in '+Math.round(s/60)+'m';
   return'in '+Math.round(s/3600)+'h';};
+let D={};
 async function tick(){
- try{
-  const d=await (await fetch('/dashboard/data',{cache:'no-store'})).json();
+  try{ D=await (await fetch('/dashboard/data',{cache:'no-store'})).json();
+       document.getElementById('err').textContent=''; render(); }
+  catch(e){ document.getElementById('err').textContent='fetch error: '+e; }
+}
+function renderEq(pts){
+  const el=document.getElementById('eqchart');
+  const ys=(pts||[]).map(p=>p.eq);
+  if(ys.length<2){ el.innerHTML='<div class="muted">no closed trades yet — curve starts at first close</div>'; return; }
+  const W=900,H=160,pad=8, mn=Math.min(...ys), mx=Math.max(...ys), rng=(mx-mn)||1;
+  const X=i=>pad+i*(W-2*pad)/(ys.length-1), Y=v=>H-pad-(v-mn)/rng*(H-2*pad);
+  const dp=ys.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join(' ');
+  const first=ys[0], last=ys[ys.length-1], col=last>=first?'#a6e3a1':'#f38ba8';
+  el.innerHTML=`<svg viewBox="0 0 ${W} ${H}" width="100%" height="160" preserveAspectRatio="none">`
+    +`<path d="${dp}" fill="none" stroke="${col}" stroke-width="2"/></svg>`
+    +`<div class="sub">start $${f(first,2)} → now $${f(last,2)} · ${ys.length-1} closed trades</div>`;
+}
+function renderAB(st){
+  const card=s=>{ if(!s) return '';
+    const L=s.live||{}, badge=s.status==='live'?'<span class="pill ok">live</span>':'<span class="pill off">research</span>';
+    let h=`<div style="flex:1;min-width:260px"><div style="font-weight:600;color:#fff;margin-bottom:6px">${esc(s.label)} ${badge}</div>`
+      +`<table><tr><th>live trades</th><td>${L.n||0}</td></tr>`
+      +`<tr><th>live win</th><td>${L.win_rate==null?'—':(100*L.win_rate).toFixed(0)+'%'}</td></tr>`
+      +`<tr><th>live PnL</th><td class="${cls(L.pnl_usd)}">$${f(L.pnl_usd,3)}</td></tr></table>`;
+    if(s.research){ const r=s.research.weekend_liquidity_fade||{};
+      h+=`<div class="sub" style="margin-top:6px">research (9y backtest) · weekend_fade: `
+        +`${r.net_bps_per_trade}bps/trd · Sharpe ${r.ann_sharpe} · rho ${r.rho_to_momentum} · ${r.trades_9y} trades`
+        +`<br><span class="muted">${esc(s.research.note||'')}</span></div>`; }
+    return h+`</div>`; };
+  document.getElementById('ab').innerHTML=
+    `<div style="display:flex;gap:20px;flex-wrap:wrap">`+card(st.strategy_1)+card(st.strategy_2)+`</div>`;
+}
+function render(){
+  const d=D; if(!d||!d.server_time) return;
   document.getElementById('stage').textContent=d.stage;
   document.getElementById('clock').textContent='server '+new Date(d.server_time).toUTCString();
   document.getElementById('equity').textContent='$'+f(d.equity_usd,2);
@@ -258,7 +366,7 @@ async function tick(){
   document.getElementById('gatesum').textContent=d.stage_summary||'';
   document.getElementById('gates').innerHTML=Object.entries(d.gates||{}).map(([k,v])=>{
     const pct=k.includes('trades')?Math.min(100,100*(v.observed||0)/(v.target||1)):(v.passed?100:8);
-    return `<div style="margin:8px 0"><div class="sub">${k}: ${v.observed} / ${v.target} ${v.passed?'✓':'✗'}</div>`
+    return `<div style="margin:8px 0"><div class="sub">${esc(k)}: ${v.observed} / ${v.target} ${v.passed?'✓':'✗'}</div>`
       +`<div class="bar"><i style="width:${pct}%;background:${v.passed?'#a6e3a1':'#89b4fa'}"></i></div></div>`;}).join('');
   const j=d.journal||{};
   document.getElementById('journal').innerHTML=
@@ -270,21 +378,26 @@ async function tick(){
   document.getElementById('models').innerHTML=
     `<div>Confidence calibrator <span class="pill ${m.calibrator_fitted?'ok':'off'}">${m.calibrator_fitted?'active':'shadow'}</span></div>`
     +`<div style="margin-top:6px">Meta-labeler <span class="pill ${m.meta_labeler_fitted?'ok':'off'}">${m.meta_labeler_fitted?'active':'shadow'}</span></div>`;
+  renderEq(d.equity_curve);
+  renderAB(d.strategies||{});
   const ps=d.open_positions||[];
   document.getElementById('positions').innerHTML=ps.length?
     `<table><tr><th>symbol</th><th>qty</th><th>entry</th><th>uPnL</th><th>stop</th><th>tp</th><th>skill</th></tr>`
-    +ps.map(p=>`<tr><td>${p.symbol}</td><td>${f(p.qty,4)}</td><td>${f(p.entry_price,2)}</td>`
+    +ps.map(p=>`<tr><td>${esc(p.symbol)}</td><td>${f(p.qty,4)}</td><td>${f(p.entry_price,2)}</td>`
       +`<td class="${cls(p.unrealized_pnl_usd)}">$${f(p.unrealized_pnl_usd,3)}</td>`
       +`<td class="muted">${f(p.stop_price,2)}</td><td class="muted">${f(p.take_profit,2)}</td>`
-      +`<td class="muted">${p.skill_id||''}</td></tr>`).join('')+`</table>`:'<div class="muted">none</div>';
+      +`<td class="muted">${esc(p.skill_id)}</td></tr>`).join('')+`</table>`:'<div class="muted">none</div>';
   const tr=d.recent_closed||[];
   document.getElementById('trades').innerHTML=tr.length?
     `<table><tr><th>when</th><th>symbol</th><th>side</th><th>PnL</th><th>reason</th><th>skill</th><th>conf</th></tr>`
-    +tr.map(t=>`<tr><td class="muted">${ago(t.closed_at)}</td><td>${t.symbol}</td><td>${t.side}</td>`
-      +`<td class="${cls(t.pnl_usd)}">$${f(t.pnl_usd,3)}</td><td class="muted">${t.exit_reason||''}</td>`
-      +`<td class="muted">${t.skill_id||''}</td><td class="muted">${f(t.confidence,2)}</td></tr>`).join('')+`</table>`
+    +tr.map(t=>`<tr><td class="muted">${ago(t.closed_at)}</td><td>${esc(t.symbol)}</td><td>${esc(t.side)}</td>`
+      +`<td class="${cls(t.pnl_usd)}">$${f(t.pnl_usd,3)}</td><td class="muted">${esc(t.exit_reason)}</td>`
+      +`<td class="muted">${esc(t.skill_id)}</td><td class="muted">${f(t.confidence,2)}</td></tr>`).join('')+`</table>`
     :'<div class="muted">no closed trades yet</div>';
-  const ac=d.activity||[];
+  let ac=(d.activity||[]).slice();
+  if(document.getElementById('hidehold').checked) ac=ac.filter(a=>!(a.kind==='pulse'&&a.would_act==='HOLD'));
+  const flt=(document.getElementById('actfilter').value||'').toLowerCase();
+  if(flt) ac=ac.filter(a=>JSON.stringify(a).toLowerCase().includes(flt));
   document.getElementById('activity').innerHTML=ac.length?
     `<table><tr><th>when</th><th>kind</th><th>symbol</th><th>regime</th><th>signal / decision</th><th>reason</th></tr>`
     +ac.map(a=>{
@@ -294,7 +407,7 @@ async function tick(){
       return `<tr><td class="muted">${ago(a.ts)}</td><td>${esc(a.kind)}</td><td>${esc(a.symbol)}</td>`
         +`<td class="muted">${esc(a.regime)}</td><td>${act}</td><td class="muted">${esc(a.reason)}</td></tr>`;
     }).join('')+`</table>`
-    :'<div class="muted">no activity recorded yet — first pulse on the next top of hour</div>';
+    :'<div class="muted">no activity matches</div>';
   const bd=d.breakdown||{};
   const brows=(obj,label)=>Object.entries(obj||{}).map(([k,v])=>
     `<tr><td>${esc(k)}</td><td class="muted">${label}</td><td>${v.n}</td>`
@@ -305,10 +418,8 @@ async function tick(){
   const sc=d.scheduler||[];
   document.getElementById('sched').innerHTML=sc.length?
     `<table><tr><th>job</th><th>next run</th></tr>`
-    +sc.map(s=>`<tr><td>${s.id}</td><td class="muted">${until(s.next_run)} <span class="muted">(${s.next_run?new Date(s.next_run).toUTCString():'—'})</span></td></tr>`).join('')+`</table>`
+    +sc.map(s=>`<tr><td>${esc(s.id)}</td><td class="muted">${until(s.next_run)} <span class="muted">(${s.next_run?new Date(s.next_run).toUTCString():'—'})</span></td></tr>`).join('')+`</table>`
     :'<div class="muted">—</div>';
-  document.getElementById('err').textContent='';
- }catch(e){document.getElementById('err').textContent='fetch error: '+e;}
 }
 tick();setInterval(tick,20000);
 </script></body></html>"""
