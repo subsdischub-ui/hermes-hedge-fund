@@ -12,7 +12,9 @@ import pandas as pd
 from hermes.data.history import (
     detect_gaps,
     fetch_history,
+    hf_symbol,
     load_history,
+    normalize_hf_klines,
     save_history,
 )
 
@@ -110,6 +112,59 @@ def test_detect_gaps_finds_injected_hole():
 def test_detect_gaps_none_when_contiguous():
     df = pd.DataFrame([_bar(t) for t in range(0, 50 * _TF_MS, _TF_MS)], columns=_COLS)
     assert detect_gaps(df, _TF_MS) == []
+
+
+def test_hf_symbol_maps_hermes_pair_to_binance_usdt():
+    assert hf_symbol("BTC/USDC") == "BTCUSDT"
+    assert hf_symbol("ETH/USDC") == "ETHUSDT"
+    assert hf_symbol("SOL/USDC") == "SOLUSDT"
+
+
+def test_normalize_hf_klines_maps_open_time_to_ms_and_selects_cols():
+    raw = pd.DataFrame(
+        {
+            "Open time": ["2017-08-17 04:00:00", "2017-08-17 08:00:00"],
+            "open": [4261.48, 4333.32],
+            "high": [4349.99, 4485.39],
+            "low": [4261.32, 4333.32],
+            "close": [4349.99, 4427.30],
+            "volume": [82.088865, 63.619882],
+            "Close time": ["2017-08-17 07:59:59.999", "2017-08-17 11:59:59.999"],
+            "Number of trades": [334, 200],
+            "Ignore": [0, 0],
+        }
+    )
+    out = normalize_hf_klines(raw)
+    assert list(out.columns) == _COLS
+    # 2017-08-17 04:00:00 UTC == 1502942400000 ms.
+    assert int(out["ts"].iloc[0]) == 1_502_942_400_000
+    assert int(out["ts"].iloc[1]) == 1_502_942_400_000 + 4 * _TF_MS
+    assert out["ts"].dtype.kind in ("i", "u")  # integer epoch ms
+    assert out["ts"].is_monotonic_increasing
+    assert float(out["close"].iloc[1]) == 4427.30
+
+
+def test_normalize_hf_klines_dedups_and_sorts():
+    raw = pd.DataFrame(
+        {
+            "Open time": [
+                "2020-01-01 08:00:00",
+                "2020-01-01 00:00:00",
+                "2020-01-01 08:00:00",  # duplicate of row 0
+            ],
+            "open": [2.0, 1.0, 2.5],
+            "high": [2.0, 1.0, 2.5],
+            "low": [2.0, 1.0, 2.5],
+            "close": [2.0, 1.0, 2.5],
+            "volume": [9.0, 9.0, 9.0],
+        }
+    )
+    out = normalize_hf_klines(raw)
+    assert out["ts"].is_unique
+    assert out["ts"].is_monotonic_increasing
+    assert len(out) == 2
+    # Dedup keeps the first occurrence of the duplicated timestamp (close 2.0).
+    assert float(out["close"].iloc[1]) == 2.0
 
 
 def test_save_load_round_trip(tmp_path):

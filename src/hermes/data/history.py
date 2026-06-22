@@ -102,6 +102,56 @@ def detect_gaps(df: pd.DataFrame, timeframe_ms: int) -> list[tuple[int, int]]:
     return gaps
 
 
+# --------------------------------------------------------------------------- #
+# Hugging Face deep-history source (linxy/CryptoCoin — Binance klines, 2017→)   #
+# --------------------------------------------------------------------------- #
+_HF_BASE = "https://huggingface.co/datasets/linxy/CryptoCoin/resolve/main"
+
+
+def hf_symbol(pair: str) -> str:
+    """Map a Hermès pair (e.g. ``BTC/USDC``) to the dataset's Binance symbol
+    (``BTCUSDT``). USDT vs USDC is immaterial for OHLCV backtesting."""
+    base = pair.split("/", 1)[0].upper()
+    return f"{base}USDT"
+
+
+def normalize_hf_klines(raw: pd.DataFrame) -> pd.DataFrame:
+    """Normalise linxy/CryptoCoin Binance-kline rows to the canonical OHLCV frame.
+
+    The dataset's ``Open time`` is a UTC datetime string; convert it to epoch-ms
+    (matching the rest of this module), keep only the canonical columns, then
+    dedup on timestamp (keep first) and sort ascending. No look-ahead: this only
+    reshapes already-closed candles.
+    """
+    df = raw.copy()
+    ts = pd.to_datetime(df["Open time"], utc=True)
+    df["ts"] = (ts.astype("int64") // 1_000_000).astype("int64")
+    df = df[_COLS]
+    return df.drop_duplicates(subset="ts").sort_values("ts").reset_index(drop=True)
+
+
+def fetch_hf_history(
+    pair: str,
+    timeframe: str,
+    dest_csv: str | os.PathLike[str] | None = None,
+    base_url: str = _HF_BASE,
+) -> pd.DataFrame:
+    """Download one symbol/timeframe CSV from linxy/CryptoCoin and normalise it.
+
+    Network IO is isolated here (the parsing in ``normalize_hf_klines`` is pure
+    and unit-tested). Optionally persists the canonical frame to ``dest_csv``.
+    """
+    import urllib.request
+
+    url = f"{base_url}/{hf_symbol(pair)}_{timeframe}.csv"
+    with urllib.request.urlopen(url, timeout=180) as resp:
+        raw = pd.read_csv(resp)
+    df = normalize_hf_klines(raw)
+    if dest_csv is not None:
+        save_history(df, dest_csv)
+    return df
+
+
 def save_history(df: pd.DataFrame, path: str | os.PathLike[str]) -> None:
     """Persist OHLCV history as CSV (no pyarrow dependency)."""
     p = Path(path)

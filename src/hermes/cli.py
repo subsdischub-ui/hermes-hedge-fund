@@ -92,11 +92,34 @@ def learn(loop: str = typer.Argument("nightly")) -> None:
 @app.command(name="fetch-history")
 def fetch_history(
     timeframe: str = typer.Option("1h", help="bar timeframe, e.g. 1h or 4h"),
-    years: float = typer.Option(2.0, help="how many years of history to assemble"),
-    max_batches: int = typer.Option(400, help="pagination safety cap"),
+    years: float = typer.Option(2.0, help="exchange mode: how much history to assemble"),
+    max_batches: int = typer.Option(400, help="exchange mode: pagination safety cap"),
+    source: str = typer.Option(
+        "hf", help="hf (linxy/CryptoCoin deep history) | exchange (live CCXT, shallow)"
+    ),
 ) -> None:
-    """Assemble multi-year OHLCV per symbol via paginated CCXT and save it under
-    ${HERMES_DATA_DIR}/history/<SYM>_<tf>.csv for offline backtests."""
+    """Assemble multi-year OHLCV per symbol and save it under
+    ${HERMES_DATA_DIR}/history/<SYM>_<tf>.csv for offline backtests.
+
+    Default source `hf` pulls the linxy/CryptoCoin dataset (Binance klines back to
+    2017 — a full multi-cycle history). `exchange` paginates the live venue
+    (Kraken caps OHLC depth, so it is shallow)."""
+
+    s = get_settings()
+    tf_ms = {"1h": 3_600_000, "4h": 14_400_000}.get(timeframe, 3_600_000)
+    out_dir = s.data_dir / "history"
+
+    if source == "hf":
+        configure_logging("INFO")
+        from hermes.data.history import detect_gaps, fetch_hf_history
+
+        for sym in s.universe:
+            path = out_dir / f"{sym.replace('/', '_')}_{timeframe}.csv"
+            df = fetch_hf_history(sym, timeframe, dest_csv=path)
+            gaps = detect_gaps(df, tf_ms)
+            span_d = (df["ts"].iloc[-1] - df["ts"].iloc[0]) / 86_400_000 if len(df) else 0
+            typer.echo(f"{sym}: {len(df)} bars (~{span_d:.0f}d), {len(gaps)} gaps -> {path}")
+        return
 
     async def _run() -> None:
         configure_logging("INFO")
@@ -106,11 +129,8 @@ def fetch_history(
         from hermes.data.history import detect_gaps, save_history
         from hermes.data.history import fetch_history as fh
 
-        tf_ms = {"1h": 3_600_000, "4h": 14_400_000}.get(timeframe, 3_600_000)
         since_ms = int(time.time() * 1000) - int(years * 365 * 24 * 3_600_000)
-        s = get_settings()
         md = get_market(s.paper_price_venue)
-        out_dir = s.data_dir / "history"
         for sym in s.universe:
             df = await fh(sym, timeframe, since_ms, md.client, max_batches=max_batches)
             gaps = detect_gaps(df, tf_ms)
@@ -128,6 +148,9 @@ def backtest(
     horizon: int = typer.Option(24, help="triple-barrier horizon in bars"),
     step: int = typer.Option(1, help="evaluate every Nth bar (speeds up long histories)"),
     timeframe: str = typer.Option("1h", help="bar timeframe"),
+    window_cap: int = typer.Option(
+        400, help="trailing bars fed to skills per bar (>=200 lookback; O(n^2)->O(n))"
+    ),
     history_dir: str = typer.Option(
         "", help="load multi-year CSVs from this dir instead of a live fetch"
     ),
@@ -181,7 +204,10 @@ def backtest(
                 typer.echo(f"fetched {sym}: {len(df)} bars")
             await md.close()
 
-        res = run_backtest(ohlcv, fee_bps=fee_bps, slippage_bps=slip, horizon=horizon, step=step)
+        res = run_backtest(
+            ohlcv, fee_bps=fee_bps, slippage_bps=slip, horizon=horizon, step=step,
+            window_cap=window_cap,
+        )
 
         # True trial count: each active skill is one frozen config tried this run;
         # the registry accumulates across runs so the DSR deflates honestly.

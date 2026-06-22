@@ -51,3 +51,14 @@ def test_run_backtest_produces_labeled_samples():
 def test_run_backtest_empty_for_too_short_history():
     res = run_backtest({"BTC/USDC": _drop_df(flat=20, decline=10)}, warmup=60)
     assert res.n_trades == 0
+
+
+def test_window_cap_matches_full_history_when_cap_exceeds_lookback():
+    # Skills are causal and read only a trailing window (<=200 bars: MA200 etc.).
+    # Capping the per-bar slice to >= that lookback must yield identical trades —
+    # this is the O(n^2)->O(n) optimisation that makes multi-year backtests feasible.
+    data = {"BTC/USDC": _trend_df(420)}
+    full = run_backtest(data, horizon=12, warmup=60, step=1)
+    capped = run_backtest(data, horizon=12, warmup=60, step=1, window_cap=350)
+    assert capped.returns_by_skill == full.returns_by_skill
+    assert capped.n_trades == full.n_trades

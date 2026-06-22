@@ -56,7 +56,12 @@ def run_backtest(
     horizon: int = 24,
     warmup: int = 60,
     step: int = 1,
+    window_cap: int = 0,
 ) -> BacktestResult:
+    """Replay the engine. ``window_cap`` (>0) bounds the trailing slice fed to the
+    skills each bar — since every skill is causal and reads at most ~200 trailing
+    bars, a cap >= that lookback gives identical signals while turning the per-bar
+    work from O(t) into O(window_cap), making multi-year histories tractable."""
     lib = get_skill_library()
     round_trip_cost = 2.0 * (fee_bps + slippage_bps) / 10_000.0
     samples: list[dict] = []
@@ -68,7 +73,8 @@ def run_backtest(
         highs, lows, closes = df["high"].tolist(), df["low"].tolist(), df["close"].tolist()
         n = len(df)
         for t in range(warmup, n - 1, max(1, step)):
-            window = df.iloc[: t + 1]
+            lo = max(0, t + 1 - window_cap) if window_cap > 0 else 0
+            window = df.iloc[lo : t + 1]
             regime = detect_regime(window)
             snap = _snapshot(window, regime)
             # Symbol-aware: BTC-only skills (e.g. intraday_tod_btc) are skipped for
@@ -101,7 +107,9 @@ def run_backtest(
     # do NOT enter the model-bootstrap `samples` set — pairs is market-neutral and
     # would pollute the directional confidence calibrator — but they do feed the
     # per-skill / overall return report (DSR, CPCV).
-    _run_cross_asset(ohlcv_by_symbol, lib, rbs, round_trip_cost, horizon, warmup, step)
+    _run_cross_asset(
+        ohlcv_by_symbol, lib, rbs, round_trip_cost, horizon, warmup, step, window_cap
+    )
 
     return BacktestResult(samples=samples, returns_by_skill=dict(rbs))
 
@@ -114,6 +122,7 @@ def _run_cross_asset(
     horizon: int,
     warmup: int,
     step: int,
+    window_cap: int = 0,
 ) -> None:
     if not ({"BTC/USDC", "ETH/USDC"} <= set(ohlcv_by_symbol)):
         return
@@ -124,7 +133,8 @@ def _run_cross_asset(
     eth_c = eth["close"].to_numpy(dtype=float)[:n]
 
     for t in range(warmup, n - 1, max(1, step)):
-        ctx = {"BTC/USDC": btc.iloc[: t + 1], "ETH/USDC": eth.iloc[: t + 1]}
+        lo = max(0, t + 1 - window_cap) if window_cap > 0 else 0
+        ctx = {"BTC/USDC": btc.iloc[lo : t + 1], "ETH/USDC": eth.iloc[lo : t + 1]}
         for sig in lib.evaluate_cross_asset(ctx):
             if sig.side == "HOLD":
                 continue
