@@ -230,6 +230,20 @@ class RiskEngine:
         """Server-side stop/TP fallback for paper mode (real exchanges enforce these)."""
         if exchange.name != "paper":
             return []
+        # Max-hold time exit (mirrors the backtest vertical barrier) — active only
+        # under the validated selective strategy so default behaviour is unchanged.
+        from hermes.risk.timeexit import is_past_max_hold, max_hold_seconds
+        from hermes.settings import get_settings
+
+        strat = get_settings().yaml("strategy", default={}) or {}
+        max_hold_secs = 0
+        if strat.get("selective_mode", False):
+            max_hold_secs = max_hold_seconds(
+                int(strat.get("max_hold_bars", 0) or 0),
+                str(strat.get("decision_timeframe", "4h")),
+            )
+        now = self.now()
+
         out: list[tuple[Position, str]] = []
         for p in await exchange.open_positions():
             try:
@@ -240,13 +254,19 @@ class RiskEngine:
             if p.qty > 0:
                 if p.stop_price and px <= p.stop_price:
                     out.append((p, "stop"))
+                    continue
                 elif p.take_profit and px >= p.take_profit:
                     out.append((p, "take_profit"))
+                    continue
             else:
                 if p.stop_price and px >= p.stop_price:
                     out.append((p, "stop"))
+                    continue
                 elif p.take_profit and px <= p.take_profit:
                     out.append((p, "take_profit"))
+                    continue
+            if is_past_max_hold(p.opened_at, now, max_hold_secs):
+                out.append((p, "max_hold"))
         return out
 
     @staticmethod

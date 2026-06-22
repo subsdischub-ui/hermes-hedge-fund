@@ -144,6 +144,7 @@ async def dashboard_data() -> dict[str, Any]:
         ],
         "scheduler": jobs,
         "models": {"calibrator_fitted": cal.is_fitted, "meta_labeler_fitted": ml.is_fitted},
+        "breakdown": await journal.breakdown(),
         "server_time": datetime.now(UTC).isoformat(),
     }
 

@@ -112,6 +112,22 @@ class TradeJournal:
             "pnl_usd": sum(r.pnl_usd or 0 for r in rows),
         }
 
+    async def breakdown(self) -> dict[str, dict]:
+        """Per-symbol and per-skill PnL/win-rate over all closed trades — surfaces
+        the validated edge's asset concentration (e.g. the SOL lean) for live
+        monitoring. Pure aggregation in hermes.memory.breakdown."""
+        from hermes.memory.breakdown import aggregate_breakdown
+
+        db = get_db()
+        async with db.session() as s:
+            rows = (
+                await s.execute(select(JournalRow).where(JournalRow.closed_at.is_not(None)))
+            ).scalars().all()
+        return {
+            "by_symbol": aggregate_breakdown(rows, "symbol"),
+            "by_skill": aggregate_breakdown(rows, "skill_id"),
+        }
+
     async def confidence_outcomes(self) -> tuple[list[float], list[int]]:
         """Closed-trade (confidence, win) pairs for confidence calibration.
         Only rows with a recorded confidence > 0 are returned; win = pnl_usd > 0."""

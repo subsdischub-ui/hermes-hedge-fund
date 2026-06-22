@@ -26,10 +26,12 @@ def build_scheduler() -> AsyncIOScheduler:
 
     orch = HermesOrchestrator()
 
+    decision_tf = str(s.yaml("strategy", "decision_timeframe", default="4h") or "4h")
+
     async def market_tick() -> None:
         for sym in s.universe:
             try:
-                await orch.tick(sym, timeframe="1h")
+                await orch.tick(sym, timeframe=decision_tf)
             except Exception as e:
                 log.exception("market_tick_failed", symbol=sym, error=str(e))
 

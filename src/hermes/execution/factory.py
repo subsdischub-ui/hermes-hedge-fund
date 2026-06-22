@@ -13,12 +13,15 @@ log = get_logger(__name__)
 
 
 def select_fees(
-    fees_cfg: dict, instrument: str
+    fees_cfg: dict, instrument: str, maker: bool = False
 ) -> tuple[float | None, float | None]:
-    """Pick (taker_bps, slippage_bps) for the stage's instrument. Returns None
-    where the config is silent so PaperExchange uses its own conservative default."""
-    taker_key = "perp_taker" if instrument == "perp" else "spot_taker"
-    fee = fees_cfg.get(taker_key)
+    """Pick (fee_bps, slippage_bps) for the stage's instrument. ``maker`` selects
+    the (lower) maker fee — used when strategy.maker_orders posts limit/post-only
+    orders. Returns None where the config is silent so PaperExchange falls back to
+    its own conservative default."""
+    side = "maker" if maker else "taker"
+    fee_key = f"{'perp' if instrument == 'perp' else 'spot'}_{side}"
+    fee = fees_cfg.get(fee_key)
     slip = fees_cfg.get("slippage_bps")
     return (
         float(fee) if fee is not None else None,
@@ -33,8 +36,13 @@ def get_exchange() -> Exchange:
     venue = stage_cfg.get("venue", "paper")
 
     if venue == "paper":
+        # Maker fees apply when the selective strategy posts limit/post-only orders.
+        # In paper this is an OPTIMISTIC assumption (fills aren't guaranteed) — the
+        # real maker-fill rate is only measurable on testnet/live.
+        strat = s.yaml("strategy", default={}) or {}
+        maker = bool(strat.get("selective_mode", False) and strat.get("maker_orders", False))
         fee_bps, slippage_bps = select_fees(
-            s.yaml("fees", default={}) or {}, stage_cfg.get("instruments", "spot")
+            s.yaml("fees", default={}) or {}, stage_cfg.get("instruments", "spot"), maker=maker
         )
         return PaperExchange(
             state_path=s.data_dir / "paper_state.json",

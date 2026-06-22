@@ -81,6 +81,8 @@ strategy:
   conviction_min: 1.0          # ts_mom |score| saturation; mean_reversion is self-selecting
   no_pyramid: true             # one position per symbol at a time (consolidation)
   maker_orders: true           # prefer post-only limit fills; real fill rate measured on testnet
+  decision_timeframe: 4h       # the rule is validated on 4h bars (decision loop + skills)
+  max_hold_bars: 12            # time exit = 12×4h ≈ 48h, mirrors the backtest vertical barrier
 
 fees:
   # Hyperliquid taker/maker fees in basis points (mid-2026). The paper exchange
@@ -100,7 +102,7 @@ loops:
   # + fees) and could not keep up with a ~270s tick × 3 symbols. Hourly removes the
   # overtrading and leaves ample headroom. Stop protection still runs every 30s
   # (stop_watcher), so risk control is unaffected by the slower decision loop.
-  market_tick:      "0 * * * *"          # main decision loop, top of every hour
+  market_tick:      "0 */4 * * *"        # main decision loop, every 4h (aligned to 4h bars)
   per_trade_close:  "event"
   nightly_reflect:  "0 23 * * *"
   weekly_rerank:    "0 22 * * 0"
