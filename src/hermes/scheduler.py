@@ -13,6 +13,8 @@ from hermes.learning import (
     run_weekly_skill_rerank,
 )
 from hermes.logging_setup import get_logger
+from hermes.runtime.activity import ActivityLog
+from hermes.runtime.pulse import pulse
 from hermes.runtime.stop_watcher import tick as stop_tick
 from hermes.settings import get_settings
 
@@ -27,13 +29,30 @@ def build_scheduler() -> AsyncIOScheduler:
     orch = HermesOrchestrator()
 
     decision_tf = str(s.yaml("strategy", "decision_timeframe", default="4h") or "4h")
+    activity = ActivityLog(s.data_dir / "activity.json")
 
     async def market_tick() -> None:
         for sym in s.universe:
             try:
-                await orch.tick(sym, timeframe=decision_tf)
+                state = await orch.tick(sym, timeframe=decision_tf)
+                rd = state.risk_decision or {}
+                prop = state.trader_proposal or {}
+                activity.record(
+                    {
+                        "kind": "decision",
+                        "symbol": sym,
+                        "executed": bool(state.executed),
+                        "side": prop.get("side", "?"),
+                        "decision": rd.get("decision"),
+                        "reason": rd.get("reason") or (state.selective_gate or {}).get("reason"),
+                        "skill": prop.get("skill_id", ""),
+                        "regime": (state.regime or {}).get("regime"),
+                        "selective_gate": state.selective_gate or {},
+                    }
+                )
             except Exception as e:
                 log.exception("market_tick_failed", symbol=sym, error=str(e))
+                activity.record({"kind": "error", "symbol": sym, "error": str(e)})
 
     async def status_heartbeat() -> None:
         """Periodic one-line health/PnL summary so the agent's rhythm is visible
@@ -75,6 +94,15 @@ def build_scheduler() -> AsyncIOScheduler:
         status_heartbeat,
         CronTrigger.from_crontab(loops.get("heartbeat", "0 * * * *"), timezone=s.tz),
         id="status_heartbeat",
+        max_instances=1,
+        coalesce=True,
+    )
+    # Hourly LLM-free pulse: records what the agent sees/would-do so the dashboard
+    # shows continuous activity between the 4h decisions.
+    sched.add_job(
+        pulse,
+        CronTrigger.from_crontab(loops.get("pulse", "0 * * * *"), timezone=s.tz),
+        id="pulse",
         max_instances=1,
         coalesce=True,
     )

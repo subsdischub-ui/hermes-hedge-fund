@@ -145,8 +145,16 @@ async def dashboard_data() -> dict[str, Any]:
         "scheduler": jobs,
         "models": {"calibrator_fitted": cal.is_fitted, "meta_labeler_fitted": ml.is_fitted},
         "breakdown": await journal.breakdown(),
+        "activity": _recent_activity(s),
         "server_time": datetime.now(UTC).isoformat(),
     }
+
+
+def _recent_activity(s, n: int = 30) -> list[dict]:
+    """Last agent decisions/pulses (why it traded or held) for the activity feed."""
+    from hermes.runtime.activity import ActivityLog
+
+    return ActivityLog(s.data_dir / "activity.json").recent(n)
 
 
 @app.get("/dashboard", response_class=HTMLResponse)
@@ -224,6 +232,8 @@ _DASHBOARD_HTML = """<!doctype html>
   <div class="card"><h2>Models</h2><div id="models"></div>
     <div class="sub" style="margin-top:8px">Identity/shadow until enough two-class trades.</div></div>
   <div class="card" style="grid-column:1/-1"><h2>Open positions</h2><div id="positions"></div></div>
+  <div class="card" style="grid-column:1/-1"><h2>Agent activity (live — ticks &amp; hourly pulses)</h2><div id="activity"></div></div>
+  <div class="card" style="grid-column:1/-1"><h2>By asset / by skill (watch the SOL lean)</h2><div id="breakdown"></div></div>
   <div class="card" style="grid-column:1/-1"><h2>Recent closed trades (rhythm)</h2><div id="trades"></div></div>
   <div class="card" style="grid-column:1/-1"><h2>Work cycle — next scheduled runs</h2><div id="sched"></div></div>
 </div>
@@ -231,6 +241,7 @@ _DASHBOARD_HTML = """<!doctype html>
 <script>
 const f=(n,d=2)=>n==null?'—':Number(n).toLocaleString(undefined,{maximumFractionDigits:d});
 const cls=v=>v>0?'pos':(v<0?'neg':'muted');
+const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const ago=iso=>{if(!iso)return'—';const s=(Date.now()-new Date(iso))/1000;
   if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+'m ago';
   if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago';};
@@ -273,6 +284,24 @@ async function tick(){
       +`<td class="${cls(t.pnl_usd)}">$${f(t.pnl_usd,3)}</td><td class="muted">${t.exit_reason||''}</td>`
       +`<td class="muted">${t.skill_id||''}</td><td class="muted">${f(t.confidence,2)}</td></tr>`).join('')+`</table>`
     :'<div class="muted">no closed trades yet</div>';
+  const ac=d.activity||[];
+  document.getElementById('activity').innerHTML=ac.length?
+    `<table><tr><th>when</th><th>kind</th><th>symbol</th><th>regime</th><th>signal / decision</th><th>reason</th></tr>`
+    +ac.map(a=>{
+      const act=a.kind==='pulse'
+        ? (a.would_act==='HOLD'?'HOLD':esc(a.would_act+' '+(a.would_skill||'')))
+        : esc((a.executed?'EXEC ':'')+(a.side||'')+(a.decision?(' / '+a.decision):''));
+      return `<tr><td class="muted">${ago(a.ts)}</td><td>${esc(a.kind)}</td><td>${esc(a.symbol)}</td>`
+        +`<td class="muted">${esc(a.regime)}</td><td>${act}</td><td class="muted">${esc(a.reason)}</td></tr>`;
+    }).join('')+`</table>`
+    :'<div class="muted">no activity recorded yet — first pulse on the next top of hour</div>';
+  const bd=d.breakdown||{};
+  const brows=(obj,label)=>Object.entries(obj||{}).map(([k,v])=>
+    `<tr><td>${esc(k)}</td><td class="muted">${label}</td><td>${v.n}</td>`
+    +`<td>${(100*v.win_rate).toFixed(0)}%</td><td class="${cls(v.pnl_usd)}">$${f(v.pnl_usd,3)}</td></tr>`).join('');
+  document.getElementById('breakdown').innerHTML=
+    `<table><tr><th>key</th><th>type</th><th>n</th><th>win</th><th>pnl</th></tr>`
+    +brows(bd.by_symbol,'asset')+brows(bd.by_skill,'skill')+`</table>`;
   const sc=d.scheduler||[];
   document.getElementById('sched').innerHTML=sc.length?
     `<table><tr><th>job</th><th>next run</th></tr>`

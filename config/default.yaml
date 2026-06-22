@@ -103,6 +103,7 @@ loops:
   # overtrading and leaves ample headroom. Stop protection still runs every 30s
   # (stop_watcher), so risk control is unaffected by the slower decision loop.
   market_tick:      "0 */4 * * *"        # main decision loop, every 4h (aligned to 4h bars)
+  pulse:            "0 * * * *"           # hourly LLM-free signal/regime snapshot -> activity feed
   per_trade_close:  "event"
   nightly_reflect:  "0 23 * * *"
   weekly_rerank:    "0 22 * * 0"
