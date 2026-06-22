@@ -151,6 +151,9 @@ def backtest(
     window_cap: int = typer.Option(
         400, help="trailing bars fed to skills per bar (>=200 lookback; O(n^2)->O(n))"
     ),
+    regime_gate: bool = typer.Option(
+        False, help="backtest the engine AS DESIGNED: route regime + gate skills per regime"
+    ),
     history_dir: str = typer.Option(
         "", help="load multi-year CSVs from this dir instead of a live fetch"
     ),
@@ -206,7 +209,7 @@ def backtest(
 
         res = run_backtest(
             ohlcv, fee_bps=fee_bps, slippage_bps=slip, horizon=horizon, step=step,
-            window_cap=window_cap,
+            window_cap=window_cap, regime_gate=regime_gate,
         )
 
         # True trial count: each active skill is one frozen config tried this run;

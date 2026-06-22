@@ -19,6 +19,13 @@ import pandas as pd
 from hermes.data.regime import detect_regime
 from hermes.risk.meta_labeling import meta_features
 from hermes.skills import get_skill_library
+from hermes.strategies.combination import (
+    ALWAYS_ON,
+    RANGE_SKILLS,
+    TREND_SKILLS,
+    route_regime,
+    select_active_skills,
+)
 from hermes.validation.triple_barrier import triple_barrier_label
 
 
@@ -57,11 +64,18 @@ def run_backtest(
     warmup: int = 60,
     step: int = 1,
     window_cap: int = 0,
+    regime_gate: bool = False,
 ) -> BacktestResult:
     """Replay the engine. ``window_cap`` (>0) bounds the trailing slice fed to the
     skills each bar — since every skill is causal and reads at most ~200 trailing
     bars, a cap >= that lookback gives identical signals while turning the per-bar
-    work from O(t) into O(window_cap), making multi-year histories tractable."""
+    work from O(t) into O(window_cap), making multi-year histories tractable.
+
+    ``regime_gate`` backtests the engine AS DESIGNED: at each bar the regime is
+    routed with hysteresis and a per-symbol signal is recorded only if its skill
+    is in the active set for that regime (trend→{ts_mom,breakout}, range→
+    {mean_reversion_regime}, always-on→{pairs,intraday}). This isolates the value
+    of the regime router vs. trading every skill unconditionally."""
     lib = get_skill_library()
     round_trip_cost = 2.0 * (fee_bps + slippage_bps) / 10_000.0
     samples: list[dict] = []
@@ -72,16 +86,25 @@ def run_backtest(
         df = df.reset_index(drop=True)
         highs, lows, closes = df["high"].tolist(), df["low"].tolist(), df["close"].tolist()
         n = len(df)
+        prev_routed: str | None = None
         for t in range(warmup, n - 1, max(1, step)):
             lo = max(0, t + 1 - window_cap) if window_cap > 0 else 0
             window = df.iloc[lo : t + 1]
             regime = detect_regime(window)
             snap = _snapshot(window, regime)
+            active: set[str] | None = None
+            if regime_gate:
+                prev_routed = route_regime(regime["efficiency_ratio"], prev_routed)
+                active = set(
+                    select_active_skills(prev_routed, TREND_SKILLS, RANGE_SKILLS, ALWAYS_ON)
+                )
             # Symbol-aware: BTC-only skills (e.g. intraday_tod_btc) are skipped for
             # other symbols, exactly as in the live tick.
             for sig in lib.evaluate_for_symbol(symbol, window):
                 if sig.side == "HOLD":
                     continue
+                if active is not None and sig.skill_id not in active:
+                    continue  # regime router excludes this skill in this regime
                 _, gross = triple_barrier_label(
                     highs, lows, closes, t, closes[t], sig.side,
                     sig.stop_pct, sig.take_profit_pct, horizon,

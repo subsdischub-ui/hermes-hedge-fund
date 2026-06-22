@@ -53,6 +53,22 @@ def test_run_backtest_empty_for_too_short_history():
     assert res.n_trades == 0
 
 
+def test_regime_gate_is_subset_and_keeps_trend_skill_in_trend():
+    # With regime gating, a per-symbol skill's signal is only recorded when that
+    # skill is in the active set for the bar's routed regime. Gating can only
+    # REMOVE off-regime trades, never add. A clean uptrend routes to "trend", so
+    # the trend skill ts_mom_vol_scaled is kept (not gated out).
+    data = {"BTC/USDC": _trend_df(420)}
+    ungated = run_backtest(data, horizon=12, warmup=60, step=1, window_cap=350)
+    gated = run_backtest(
+        data, horizon=12, warmup=60, step=1, window_cap=350, regime_gate=True
+    )
+    assert gated.n_trades <= ungated.n_trades
+    assert len(gated.returns_by_skill.get("ts_mom_vol_scaled", [])) == len(
+        ungated.returns_by_skill.get("ts_mom_vol_scaled", [])
+    )
+
+
 def test_window_cap_matches_full_history_when_cap_exceeds_lookback():
     # Skills are causal and read only a trailing window (<=200 bars: MA200 etc.).
     # Capping the per-bar slice to >= that lookback must yield identical trades —
