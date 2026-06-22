@@ -70,6 +70,18 @@ sizing:
   target_vol_per_bar: 0.01       # vol-targeting reference (per 1h bar); risk budget scales
                                  # down when HAR-RV forecast vol exceeds this, up (bounded) when calm
 
+strategy:
+  # OOS-validated selective rule (walk-forward on ~9y, commit 330bc92): trade ONLY
+  # the high-conviction momentum tail + range mean-reversion, ONE position per move
+  # (consolidation), dropping skills that lose even gross (breakout, pairs).
+  # DEFAULT OFF — flip selective_mode to true to run it in paper-forward. Enforced
+  # deterministically in risk_manager via hermes.risk.selective.selective_gate.
+  selective_mode: false
+  allowed_skills: [ts_mom_vol_scaled, mean_reversion_regime]
+  conviction_min: 1.0          # ts_mom |score| saturation; mean_reversion is self-selecting
+  no_pyramid: true             # one position per symbol at a time (consolidation)
+  maker_orders: true           # prefer post-only limit fills; real fill rate measured on testnet
+
 fees:
   # Hyperliquid taker/maker fees in basis points (mid-2026). The paper exchange
   # mirrors the taker fee for the stage's instrument so the measured Sharpe /

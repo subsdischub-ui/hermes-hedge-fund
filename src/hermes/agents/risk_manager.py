@@ -12,6 +12,7 @@ from hermes.risk import get_risk_engine
 from hermes.risk.calibration import get_confidence_calibrator
 from hermes.risk.guardrails import TradeProposal
 from hermes.risk.meta_labeling import get_meta_labeler, meta_features
+from hermes.risk.selective import load_selective_config, selective_gate
 from hermes.risk.volforecast import har_rv_forecast, vol_target_scale
 from hermes.settings import get_settings
 from hermes.trm import get_trm
@@ -32,6 +33,24 @@ async def run(state: HermesState) -> HermesState:
         thesis=proposal_d.get("thesis", ""),
         skill_id=proposal_d.get("skill_id", ""),
     )
+
+    # --- selective-mode gate (OOS-validated rule; DEFAULT OFF) ---
+    # Deterministically enforce: trade only the selective slate, only the high-
+    # conviction momentum tail, one position per move. A blocked proposal is forced
+    # to HOLD before any sizing so the agent trades the validated rule, not the
+    # full unconditional slate. No-op unless strategy.selective_mode is true.
+    sel_cfg = load_selective_config(get_settings())
+    if sel_cfg.enabled and proposal.side != "HOLD":
+        open_symbols = {p.symbol for p in await get_exchange().open_positions()}
+        ok, reason = selective_gate(
+            proposal.side, proposal.symbol, proposal.skill_id,
+            state.skill_signals or [], open_symbols, sel_cfg,
+        )
+        state.selective_gate = {"passed": ok, "reason": reason}
+        if not ok:
+            log.info("selective_gate_block", symbol=proposal.symbol, reason=reason)
+            proposal.side = "HOLD"
+            side = "HOLD"
 
     # --- TRM refinement (only for non-HOLD) ---
     if state.ohlcv is not None and side != "HOLD":

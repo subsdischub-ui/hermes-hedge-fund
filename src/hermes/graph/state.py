@@ -29,6 +29,7 @@ class HermesState:
     confidence_calibration: dict[str, Any] = field(default_factory=dict)
     vol_forecast: dict[str, Any] = field(default_factory=dict)
     meta_label: dict[str, Any] = field(default_factory=dict)
+    selective_gate: dict[str, Any] = field(default_factory=dict)
 
     # outcome
     executed: bool = False

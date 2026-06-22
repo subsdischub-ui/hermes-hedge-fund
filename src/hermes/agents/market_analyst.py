@@ -50,6 +50,9 @@ async def run(state: HermesState) -> HermesState:
     # Regime-condition the skill signals: down-weight off-regime skills (e.g.
     # mean-reversion in a trend) so the trader/researchers see a regime-aware prior.
     for sig in sigs:
+        # Preserve the raw signal strength BEFORE regime down-weighting — the
+        # selective gate's conviction floor is defined on the raw |score|.
+        sig["confidence_raw"] = float(sig.get("confidence", 0.0))
         w = regime_signal_weight(sig.get("skill_id", ""), regime["regime"])
         sig["regime_weight"] = w
         sig["confidence"] = float(sig.get("confidence", 0.0)) * w
