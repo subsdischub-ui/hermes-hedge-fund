@@ -76,7 +76,7 @@ strategy:
   # (consolidation), dropping skills that lose even gross (breakout, pairs).
   # DEFAULT OFF — flip selective_mode to true to run it in paper-forward. Enforced
   # deterministically in risk_manager via hermes.risk.selective.selective_gate.
-  selective_mode: false
+  selective_mode: true         # PAPER-FORWARD: agent trades the OOS-validated rule (stage_0, no real money)
   allowed_skills: [ts_mom_vol_scaled, mean_reversion_regime]
   conviction_min: 1.0          # ts_mom |score| saturation; mean_reversion is self-selecting
   no_pyramid: true             # one position per symbol at a time (consolidation)
