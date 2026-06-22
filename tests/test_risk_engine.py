@@ -64,6 +64,9 @@ async def test_daily_kill_switch_fires():
 @pytest.mark.asyncio
 async def test_spot_sell_rejected():
     engine = RiskEngine()
+    # The paper stage now runs as perp (shorts allowed, matching the validated
+    # strategy); force a SPOT instrument config to exercise the no-short rule itself.
+    engine.stage_cfg = {**engine.stage_cfg, "instruments": "spot"}
     exch = _FakeExchange()
     decision = await engine.evaluate(
         proposal=TradeProposal(

@@ -12,7 +12,7 @@ from hermes.risk import get_risk_engine
 from hermes.risk.calibration import get_confidence_calibrator
 from hermes.risk.guardrails import TradeProposal
 from hermes.risk.meta_labeling import get_meta_labeler, meta_features
-from hermes.risk.selective import load_selective_config, selective_gate
+from hermes.risk.selective import load_selective_config, pick_selective_signal, selective_gate
 from hermes.risk.volforecast import har_rv_forecast, vol_target_scale
 from hermes.settings import get_settings
 from hermes.trm import get_trm
@@ -34,21 +34,40 @@ async def run(state: HermesState) -> HermesState:
         skill_id=proposal_d.get("skill_id", ""),
     )
 
-    # --- selective-mode gate (OOS-validated rule; DEFAULT OFF) ---
-    # Deterministically enforce: trade only the selective slate, only the high-
-    # conviction momentum tail, one position per move. A blocked proposal is forced
-    # to HOLD before any sizing so the agent trades the validated rule, not the
-    # full unconditional slate. No-op unless strategy.selective_mode is true.
+    # --- selective-mode: the OOS-validated DETERMINISTIC rule drives (DEFAULT OFF) ---
+    # The validated Strategy #1 is a deterministic rule (high-conviction selective
+    # slate). In selective_mode the agent must trade THAT, not whatever the LLM
+    # proposes — so the deterministic signal OVERRIDES the LLM (which becomes
+    # advisory), then the gate enforces no-pyramiding. If no signal qualifies, the
+    # agent holds. This makes the LIVE agent faithfully reproduce the backtest.
     sel_cfg = load_selective_config(get_settings())
-    if sel_cfg.enabled and proposal.side != "HOLD":
-        open_symbols = {p.symbol for p in await get_exchange().open_positions()}
-        ok, reason = selective_gate(
-            proposal.side, proposal.symbol, proposal.skill_id,
-            state.skill_signals or [], open_symbols, sel_cfg,
-        )
-        state.selective_gate = {"passed": ok, "reason": reason}
-        if not ok:
-            log.info("selective_gate_block", symbol=proposal.symbol, reason=reason)
+    if sel_cfg.enabled:
+        det = pick_selective_signal(state.skill_signals or [], sel_cfg, state.symbol)
+        if det is not None:
+            if proposal.side != det["side"] or proposal.skill_id != det["skill_id"]:
+                log.info(
+                    "selective_override", symbol=state.symbol,
+                    llm_side=proposal.side, det_side=det["side"], skill=det["skill_id"],
+                )
+            proposal = TradeProposal(
+                symbol=state.symbol, side=det["side"], confidence=float(det["confidence"]),
+                stop_pct=float(det["stop_pct"]), take_profit_pct=float(det["take_profit_pct"]),
+                thesis=det["thesis"], skill_id=det["skill_id"],
+            )
+            side = proposal.side
+            open_symbols = {p.symbol for p in await get_exchange().open_positions()}
+            ok, reason = selective_gate(
+                proposal.side, proposal.symbol, proposal.skill_id,
+                state.skill_signals or [], open_symbols, sel_cfg,
+            )
+            state.selective_gate = {"passed": ok, "reason": reason, "deterministic": True}
+            if not ok:
+                log.info("selective_gate_block", symbol=proposal.symbol, reason=reason)
+                proposal.side = "HOLD"
+                side = "HOLD"
+        else:
+            # No qualifying deterministic signal -> selective mode trades nothing.
+            state.selective_gate = {"passed": False, "reason": "no qualifying selective signal"}
             proposal.side = "HOLD"
             side = "HOLD"
 

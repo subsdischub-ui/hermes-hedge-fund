@@ -7,7 +7,10 @@ base_currency: USDC
 stages:
   stage_0_paper:
     venue: paper
-    instruments: spot
+    # perp (not spot) so the paper agent can SHORT — the OOS-validated Strategy #1
+    # is long/short (perps); a spot stage silently rejected every SELL, crippling
+    # the live test to long-only and diverging from the backtest.
+    instruments: perp
     # Paper mode still sizes positions (so we can measure performance).
     # No real money is at risk; cap is conservative to mirror Stage 1 sizing.
     per_trade_risk_cap_pct: 0.5

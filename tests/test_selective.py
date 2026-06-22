@@ -4,7 +4,7 @@ per symbol (consolidation), dropping skills that lose even gross. Default OFF.""
 
 from __future__ import annotations
 
-from hermes.risk.selective import SelectiveConfig, selective_gate
+from hermes.risk.selective import SelectiveConfig, pick_selective_signal, selective_gate
 
 CFG = SelectiveConfig(
     enabled=True,
@@ -82,3 +82,30 @@ def test_no_pyramid_allows_different_symbol():
         [_sig("ts_mom_vol_scaled", 1.0)], {"BTC/USDC"}, CFG,
     )
     assert ok
+
+
+# --- deterministic drive: the validated signal overrides the LLM's veto -------
+def _ssig(skill, side, conf):
+    return {"skill_id": skill, "side": side, "confidence_raw": conf, "confidence": conf,
+            "stop_pct": 0.03, "take_profit_pct": 0.05}
+
+
+def test_pick_selective_returns_best_qualifying_signal():
+    sigs = [_ssig("ts_mom_vol_scaled", "BUY", 1.0), _ssig("breakout_vol_expansion", "SELL", 0.65)]
+    p = pick_selective_signal(sigs, CFG, "BTC/USDC")
+    assert p is not None
+    assert p["side"] == "BUY" and p["skill_id"] == "ts_mom_vol_scaled" and p["symbol"] == "BTC/USDC"
+
+
+def test_pick_selective_none_when_low_conviction():
+    assert pick_selective_signal([_ssig("ts_mom_vol_scaled", "BUY", 0.5)], CFG, "BTC/USDC") is None
+
+
+def test_pick_selective_mean_reversion_exempt_from_conviction():
+    p = pick_selective_signal([_ssig("mean_reversion_regime", "SELL", 0.6)], CFG, "ETH/USDC")
+    assert p is not None and p["side"] == "SELL"
+
+
+def test_pick_selective_disabled_returns_none():
+    off = SelectiveConfig(False, (), 1.0, True)
+    assert pick_selective_signal([_ssig("ts_mom_vol_scaled", "BUY", 1.0)], off, "BTC/USDC") is None

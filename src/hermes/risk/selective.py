@@ -81,3 +81,41 @@ def selective_gate(
         return False, "already holding a position (no-pyramid / one position per move)"
 
     return True, "passed selective gate"
+
+
+def pick_selective_signal(
+    skill_signals: Iterable[dict], cfg: SelectiveConfig, symbol: str
+) -> dict | None:
+    """The deterministic selective signal that should DRIVE the trade (overriding
+    the LLM's veto in selective_mode), or None if nothing qualifies.
+
+    Picks the highest raw-conviction non-HOLD signal in the slate that clears the
+    conviction floor (conviction-gated skills only). The backtest-validated rule is
+    deterministic, so in selective_mode the agent must trade THIS — the LLM trader
+    is advisory, not a gate. Returns a proposal dict the risk engine can size.
+    """
+    if not cfg.enabled:
+        return None
+    best, best_conf = None, -1.0
+    for s in skill_signals:
+        sid = s.get("skill_id", "")
+        if s.get("side", "HOLD") == "HOLD":
+            continue
+        if cfg.allowed_skills and sid not in cfg.allowed_skills:
+            continue
+        conf = float(s.get("confidence_raw", s.get("confidence", 0.0)))
+        if sid in _CONVICTION_GATED and conf < cfg.conviction_min:
+            continue
+        if conf > best_conf:
+            best, best_conf = s, conf
+    if best is None:
+        return None
+    return {
+        "symbol": symbol,
+        "side": best["side"],
+        "confidence": best_conf,
+        "stop_pct": float(best.get("stop_pct", 0.02)),
+        "take_profit_pct": float(best.get("take_profit_pct", 0.04)),
+        "skill_id": best.get("skill_id", ""),
+        "thesis": "selective deterministic signal (validated rule drives; LLM advisory)",
+    }
