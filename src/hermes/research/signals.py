@@ -204,3 +204,108 @@ def funding_extreme_fade(df: pd.DataFrame) -> SkillSignal:
         sid, side, conf, max(0.005, 3.0 * atrpct), max(0.005, 2.0 * atrpct),
         f"funding extreme z={fz:.2f} -> fade + carry", {"funding_z": fz},
     )
+
+
+# ======================= ROUND 2 — seasonality + persistence ================ #
+# Round 1 lesson: "fade" signals lost; the calendar one (weekend) survived. So
+# round 2 leans into calendar/seasonality and flow PERSISTENCE (not fade).
+
+
+# turn_of_month_tilt — long the documented turn-of-month inflow window (last day
+# of month + first 3 days). Calendar-gated -> orthogonal-by-timing to momentum.
+_TOM_VOL_LB = 30
+
+
+def turn_of_month_tilt(df: pd.DataFrame) -> SkillSignal:
+    sid = "turn_of_month_tilt"
+    if "ts" not in df.columns or len(df) < _TOM_VOL_LB + 1:
+        return _hold(sid, "missing ts / insufficient")
+    cur = pd.Timestamp(df["ts"].iloc[-1])
+    if cur.tzinfo is None:
+        cur = cur.tz_localize("UTC")
+    day, dim = cur.day, cur.days_in_month
+    if not (day >= dim or day <= 3):
+        return _hold(sid, f"day {day}/{dim} not turn-of-month")
+    atrpct = float(_atr_pct(df).tail(_TOM_VOL_LB).mean())
+    if not (np.isfinite(atrpct) and atrpct > 0):
+        atrpct = 0.02
+    return SkillSignal(
+        sid, "BUY", 0.5, max(0.005, 2.0 * atrpct), max(0.005, 3.0 * atrpct),
+        f"turn-of-month long (day {day}/{dim})", {"day": day},
+    )
+
+
+# ofi_persistence_range — in a RANGE regime, trade WITH sustained aggressor-flow
+# pressure (the opposite of the round-1 exhaustion fade that lost). Microstructure.
+_OFP_SMOOTH = 18
+_OFP_WIN = 180
+_OFP_Z = 1.0
+
+
+def ofi_persistence_range(df: pd.DataFrame) -> SkillSignal:
+    sid = "ofi_persistence_range"
+    need = ("close", "volume", "taker_buy_base")
+    if len(df) < _OFP_WIN + _OFP_SMOOTH or any(c not in df.columns for c in need):
+        return _hold(sid, "insufficient / missing micro columns")
+    from hermes.data.regime import detect_regime
+
+    if detect_regime(df)["regime"] != "range":
+        return _hold(sid, "not range regime")
+    ofi = (df["taker_buy_base"] / df["volume"].replace(0, np.nan)) - 0.5
+    smoothed = ofi.rolling(_OFP_SMOOTH).mean()
+    z = _ztail(smoothed, _OFP_WIN)
+    atrpct = float(_atr_pct(df).tail(14).mean())
+    if not (np.isfinite(atrpct) and atrpct > 0):
+        atrpct = 0.02
+    if z >= _OFP_Z:
+        side = "BUY"            # sustained aggressor BUYING in a flat tape -> go with it
+    elif z <= -_OFP_Z:
+        side = "SELL"
+    else:
+        return _hold(sid, f"flow z={z:.2f}")
+    conf = min(1.0, abs(z) / 2.0) * 0.55
+    return SkillSignal(
+        sid, side, conf, max(0.005, 2.0 * atrpct), max(0.005, 2.0 * atrpct),
+        f"range OFI persistence z={z:.2f}", {"ofi_z": z},
+    )
+
+
+# wick_reversion — fade a wide-range bar that REJECTED an extreme (long wick) and
+# closed back inside. Overreaction; distinct from the flow-exhaustion fade.
+_WR_VOL_LB = 30
+_WR_RANGE_MULT = 1.5
+_WR_WICK_MULT = 2.0
+
+
+def wick_reversion(df: pd.DataFrame) -> SkillSignal:
+    sid = "wick_reversion"
+    if len(df) < _WR_VOL_LB + 1:
+        return _hold(sid, "insufficient history")
+    o = float(df["open"].iloc[-1])
+    h = float(df["high"].iloc[-1])
+    low = float(df["low"].iloc[-1])
+    c = float(df["close"].iloc[-1])
+    rng = h - low
+    if rng <= 0 or c <= 0:
+        return _hold(sid, "degenerate bar")
+    atrpct = float(_atr_pct(df).iloc[:-1].tail(_WR_VOL_LB).mean())
+    if not (np.isfinite(atrpct) and atrpct > 0):
+        return _hold(sid, "atrpct invalid")
+    if (rng / c) < _WR_RANGE_MULT * atrpct:          # only big bars
+        return _hold(sid, "bar not wide enough")
+    body = abs(c - o)
+    upper_wick = h - max(o, c)
+    lower_wick = min(o, c) - low
+    pos_in_range = (c - low) / rng
+    side = "HOLD"
+    if upper_wick > _WR_WICK_MULT * body and pos_in_range < 0.4:
+        side = "SELL"           # rejected the highs -> fade down
+    elif lower_wick > _WR_WICK_MULT * body and pos_in_range > 0.6:
+        side = "BUY"            # rejected the lows -> bounce
+    if side == "HOLD":
+        return _hold(sid, "no wick rejection")
+    conf = 0.55
+    return SkillSignal(
+        sid, side, conf, max(0.005, 2.0 * atrpct), max(0.005, 1.5 * atrpct),
+        f"wick reversion pos={pos_in_range:.2f}", {"pos_in_range": pos_in_range},
+    )

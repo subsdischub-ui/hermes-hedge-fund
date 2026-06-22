@@ -182,3 +182,53 @@ def test_funding_extreme_fade_holds_when_neutral():
     df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
                        "funding_rate": fr})
     assert funding_extreme_fade(df).side == "HOLD"
+
+
+# --------------------------- round 2 candidates ---------------------------- #
+def _ts_df(last_ts, n=40):
+    base = pd.Timestamp(last_ts, tz="UTC")
+    ts = [base - pd.Timedelta(hours=4) * (n - 1 - i) for i in range(n)]
+    close = np.full(n, 100.0)
+    return pd.DataFrame({"ts": ts, "open": close, "high": close * 1.01,
+                         "low": close * 0.99, "close": close})
+
+
+def test_turn_of_month_tilt_longs_first_of_month_and_holds_midmonth():
+    from hermes.research.signals import turn_of_month_tilt
+
+    assert turn_of_month_tilt(_ts_df("2021-03-01 00:00")).side == "BUY"   # day 1
+    assert turn_of_month_tilt(_ts_df("2021-03-15 00:00")).side == "HOLD"  # mid-month
+
+
+def test_ofi_persistence_range_goes_with_flow_in_range():
+    from hermes.research.signals import ofi_persistence_range
+
+    n = 220
+    rng = np.random.default_rng(7)
+    close = 100.0 + rng.standard_normal(n) * 0.05      # flat/choppy -> range regime
+    vol = np.full(n, 1000.0)
+    tbb = np.full(n, 900.0)                            # sustained aggressor BUY (ofi +0.4)
+    df = pd.DataFrame({"close": close, "high": close * 1.005, "low": close * 0.995,
+                       "open": close, "volume": vol, "taker_buy_base": tbb})
+    assert ofi_persistence_range(df).side == "BUY"
+
+
+def test_wick_reversion_fades_rejected_high():
+    from hermes.research.signals import wick_reversion
+
+    n = 40
+    close = np.full(n, 100.0)
+    df = pd.DataFrame({"open": close.copy(), "high": close * 1.001, "low": close * 0.999,
+                       "close": close.copy()})
+    # Last bar: big upper wick, closes near the low (rejection at the top).
+    df.loc[df.index[-1], ["open", "high", "low", "close"]] = [100.0, 110.0, 99.5, 100.2]
+    assert wick_reversion(df).side == "SELL"
+
+
+def test_wick_reversion_holds_small_bar():
+    from hermes.research.signals import wick_reversion
+
+    n = 40
+    close = np.full(n, 100.0)
+    df = pd.DataFrame({"open": close, "high": close * 1.001, "low": close * 0.999, "close": close})
+    assert wick_reversion(df).side == "HOLD"
