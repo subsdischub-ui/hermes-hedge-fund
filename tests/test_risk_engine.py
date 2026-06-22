@@ -84,6 +84,28 @@ async def test_spot_sell_rejected():
 
 
 @pytest.mark.asyncio
+async def test_perp_sell_approved():
+    """On a perp stage (the paper default now), a SHORT must NOT be blocked by the
+    spot no-short rule — Strategy #1 is long/short, so SELL must reach approval."""
+    engine = RiskEngine()
+    engine.stage_cfg = {**engine.stage_cfg, "instruments": "perp"}
+    exch = _FakeExchange()
+    decision = await engine.evaluate(
+        proposal=TradeProposal(
+            symbol="BTC/USDC", side="SELL", confidence=0.9, stop_pct=0.02,
+            take_profit_pct=0.04, thesis="mean-reversion short",
+        ),
+        exchange=exch,
+        atr=1.0,
+        price=100.0,
+        journal_stats={"count": 0},
+        realized_pnl_today_usd=0.0,
+    )
+    assert decision.decision == "APPROVED"
+    assert decision.order is not None and decision.order.side == "SELL"
+
+
+@pytest.mark.asyncio
 async def test_hold_rejected():
     engine = RiskEngine()
     exch = _FakeExchange()
