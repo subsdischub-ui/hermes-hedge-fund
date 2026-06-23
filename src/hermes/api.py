@@ -614,7 +614,7 @@ _CHAT_HTML = """<!doctype html>
 <header><h1>Hermès</h1><span class="sub">parle avec l'agent de notre entreprise</span>
   <a href="/dashboard" style="margin-left:auto">← dashboard</a></header>
 <div id="keyrow">
-  <input id="key" type="password" placeholder="ta clé API (x-api-key)" style="flex:1"/>
+  <input id="key" type="password" placeholder="clé API (optionnel — seulement si l'accès est protégé)" style="flex:1"/>
   <button id="savekey" type="button">enregistrer</button>
 </div>
 <div id="log"></div>
@@ -633,14 +633,15 @@ function add(who,text,meta){const d=document.createElement('div');d.className='m
 add('bot',"Salut. Je suis Hermès. Demande-moi où en est notre entreprise, ce que voient les stratégies, ou pourquoi je tiens ma position. (Je discute seulement — je n'exécute aucune action ici.)");
 document.getElementById('f').onsubmit=async e=>{e.preventDefault();
   const m=document.getElementById('msg').value.trim(); const key=keyEl.value.trim();
-  if(!m)return; if(!key){add('bot','Entre d\\'abord ta clé API en haut, puis enregistre.');return;}
+  if(!m)return;
   add('me',m); document.getElementById('msg').value=''; const btn=document.getElementById('send'); btn.disabled=true;
   const think=add('bot','…');
   try{
     const r=await fetch('/chat',{method:'POST',headers:{'content-type':'application/json','x-api-key':key},
       body:JSON.stringify({message:m,history:hist.slice(-10)})});
     const j=await r.json();
-    if(!r.ok){think.textContent='Erreur: '+(j.detail||r.status);}
+    if(r.status===401){think.textContent='Accès protégé : saisis ta clé API en haut, enregistre, puis réessaie.';}
+    else if(!r.ok){think.textContent='Erreur: '+(j.detail||r.status);}
     else{think.innerHTML=esc(j.reply)+`<div class="meta">${esc(j.model||'')}</div>`;
       hist.push({role:'user',content:m}); hist.push({role:'assistant',content:j.reply});}
   }catch(err){think.textContent='Erreur réseau: '+err;}
