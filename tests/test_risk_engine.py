@@ -48,7 +48,7 @@ async def test_daily_kill_switch_fires():
     # Spend 6% of equity in realized losses today; stage cap is 5% (stage_0).
     decision = await engine.evaluate(
         proposal=TradeProposal(
-            symbol="BTC/USDC", side="BUY", confidence=0.9, stop_pct=0.02,
+            symbol="BTC/USDT:USDT", side="BUY", confidence=0.9, stop_pct=0.02,
             take_profit_pct=0.04, thesis="x",
         ),
         exchange=exch,
@@ -70,7 +70,7 @@ async def test_spot_sell_rejected():
     exch = _FakeExchange()
     decision = await engine.evaluate(
         proposal=TradeProposal(
-            symbol="BTC/USDC", side="SELL", confidence=0.9, stop_pct=0.02,
+            symbol="BTC/USDT:USDT", side="SELL", confidence=0.9, stop_pct=0.02,
             take_profit_pct=0.04, thesis="x",
         ),
         exchange=exch,
@@ -92,7 +92,7 @@ async def test_perp_sell_approved():
     exch = _FakeExchange()
     decision = await engine.evaluate(
         proposal=TradeProposal(
-            symbol="BTC/USDC", side="SELL", confidence=0.9, stop_pct=0.02,
+            symbol="BTC/USDT:USDT", side="SELL", confidence=0.9, stop_pct=0.02,
             take_profit_pct=0.04, thesis="mean-reversion short",
         ),
         exchange=exch,
@@ -111,7 +111,7 @@ async def test_hold_rejected():
     exch = _FakeExchange()
     decision = await engine.evaluate(
         proposal=TradeProposal(
-            symbol="BTC/USDC", side="HOLD", confidence=0.9, stop_pct=0.02,
+            symbol="BTC/USDT:USDT", side="HOLD", confidence=0.9, stop_pct=0.02,
             take_profit_pct=0.04, thesis="x",
         ),
         exchange=exch,
@@ -128,7 +128,7 @@ async def test_low_confidence_rejected():
     exch = _FakeExchange()
     decision = await engine.evaluate(
         proposal=TradeProposal(
-            symbol="BTC/USDC", side="BUY", confidence=0.10, stop_pct=0.02,
+            symbol="BTC/USDT:USDT", side="BUY", confidence=0.10, stop_pct=0.02,
             take_profit_pct=0.04, thesis="x",
         ),
         exchange=exch,

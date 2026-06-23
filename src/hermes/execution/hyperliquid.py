@@ -96,6 +96,20 @@ class HyperliquidExchange(Exchange):
         return float(state.get("marginSummary", {}).get("accountValue", 0.0))
 
     async def open_positions(self) -> list[Position]:
+        from hermes.settings import get_settings
+
+        # Resolve the bare coin (e.g. "SUI") back to the FULL universe symbol so the
+        # adapter's Position.symbol matches what the gates/no-pyramid compare against.
+        # A hardcoded "{coin}/USDC" would not equal a colon-format perp like
+        # "SUI/USDT:USDT", silently breaking position correlation/dedup.
+        universe = get_settings().universe
+
+        def _resolve(coin: str) -> str:
+            return next(
+                (s for s in universe if s.split("/")[0].upper() == coin.upper()),
+                f"{coin}/USDC",
+            )
+
         state = await self._to_thread(self.info.user_state, self.address)
         out: list[Position] = []
         for asset in state.get("assetPositions", []):
@@ -105,7 +119,7 @@ class HyperliquidExchange(Exchange):
                 continue
             out.append(
                 Position(
-                    symbol=p["coin"] + "/USDC",
+                    symbol=_resolve(p["coin"]),
                     qty=qty,
                     entry_price=float(p["entryPx"]),
                     stop_price=None,

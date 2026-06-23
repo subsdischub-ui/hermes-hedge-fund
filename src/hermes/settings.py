@@ -56,8 +56,12 @@ class Settings(BaseSettings):
     trm_checkpoint: Path = Field(Path("/data/trm/latest.pt"), alias="TRM_CHECKPOINT")
     trm_confidence_floor: float = Field(0.55, alias="TRM_CONFIDENCE_FLOOR")
 
-    # Exchanges
-    exchange_primary: str = Field("hyperliquid", alias="EXCHANGE_PRIMARY")
+    # Exchanges. Primary = the data venue (OHLCV + reference prices). Default is
+    # Binance USDT-M futures: the operator's actual account, it carries perps +
+    # funding for the whole universe, AND it is the venue the strategies were
+    # backtested on (so live matches the validated backtest). yaml `data_venue:`
+    # drives it; EXCHANGE_PRIMARY env overrides.
+    exchange_primary_raw: str = Field("binanceusdm", alias="EXCHANGE_PRIMARY")
     exchange_backup: str = Field("bybit", alias="EXCHANGE_BACKUP")
     # Venue used by the paper exchange to fetch reference prices. Must list our
     # USDC-quoted universe. Kraken and Coinbase Advanced both do; Binance does not.
@@ -85,7 +89,28 @@ class Settings(BaseSettings):
     # --- properties ---------------------------------------------------------
     @property
     def universe(self) -> list[str]:
+        # The HERMES_UNIVERSE env var wins (operator override, no redeploy needed);
+        # otherwise the yaml `universe:` list drives it so the traded universe is
+        # code-controlled and deploys with the repo; else the field default.
+        import os
+
+        if not os.environ.get("HERMES_UNIVERSE"):
+            y = self.yaml("universe")
+            if isinstance(y, list) and y:
+                return [str(x).strip() for x in y if str(x).strip()]
         return [s.strip() for s in self.universe_raw.split(",") if s.strip()]
+
+    @property
+    def exchange_primary(self) -> str:
+        # EXCHANGE_PRIMARY env wins; otherwise yaml `data_venue:` drives it (code-
+        # controlled, deploys with the repo); else the field default (binanceusdm).
+        import os
+
+        if not os.environ.get("EXCHANGE_PRIMARY"):
+            y = self.yaml("data_venue")
+            if isinstance(y, str) and y.strip():
+                return y.strip()
+        return self.exchange_primary_raw
 
     @property
     def stage_config(self) -> dict[str, Any]:

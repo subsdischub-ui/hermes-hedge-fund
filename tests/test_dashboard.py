@@ -18,6 +18,15 @@ def test_dashboard_html_and_data():
             assert key in j
 
 
+def test_manual_tick_resolves_base_from_universe():
+    """/tick/{base} resolves the bare coin to its full universe symbol (Binance perp
+    format); an unknown base 404s instead of fabricating a hardcoded /USDC symbol."""
+    with TestClient(app) as client:
+        r = client.post("/tick/ZZZ")  # not in universe
+        assert r.status_code == 404
+        assert "ZZZ" in r.json()["detail"]
+
+
 def test_strategies_ab_attributes_funding_to_strategy_2():
     """A/B split: funding trades land under Strategy #2 (the validated brick),
     momentum under #1."""

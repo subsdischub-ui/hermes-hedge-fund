@@ -1,5 +1,14 @@
 # Hermès — runtime config. Loaded by hermes.settings.Settings; env vars override.
-universe: [BTC/USDC, ETH/USDC, SOL/USDC]
+# Data venue = Binance USDT-M futures: the operator's actual account, carries perps +
+# funding for the whole universe, AND the venue the strategies were backtested on
+# (Binance klines) so live matches the validated backtest. yaml-driven (EXCHANGE_PRIMARY
+# env overrides). The carry (#3) hedge needs spot+perp on one venue — Binance has both.
+data_venue: binanceusdm
+# Binance USDT-M perp symbols ({COIN}/USDT:USDT). The 4 alts were validated: funding (#2)
+# and carry (#3) edges generalise (OOS positive on SUI/ARB/WIF/AVAX), momentum (#1) is
+# net-positive (mixed OOS) — added in PAPER to scratch-test the edges live and accumulate
+# trades toward the gates. funding_history maps {COIN}/... -> {COIN}USDT.
+universe: [BTC/USDT:USDT, ETH/USDT:USDT, SOL/USDT:USDT, AVAX/USDT:USDT, SUI/USDT:USDT, ARB/USDT:USDT, WIF/USDT:USDT]
 bankroll_usd: 100
 base_currency: USDC
 
@@ -14,7 +23,10 @@ stages:
     # Paper mode still sizes positions (so we can measure performance).
     # No real money is at risk; cap is conservative to mirror Stage 1 sizing.
     per_trade_risk_cap_pct: 0.5
-    max_open_positions: 3
+    # 7-asset universe x 3 sleeves -> raised from 3 so the extra arming converts to
+    # trades (and accumulates toward the 200-paper-trade gate) instead of being
+    # capped. At 0.5% risk/trade, 6 concurrent positions = ~3% of equity deployed.
+    max_open_positions: 6
     daily_loss_kill_pct: 5.0
     advance_when:
       paper_trades: 200

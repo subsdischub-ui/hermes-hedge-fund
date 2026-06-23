@@ -362,9 +362,15 @@ async def chat_page() -> str:
 
 @app.post("/tick/{symbol_base}", dependencies=[Depends(require_api_key)])
 async def manual_tick(symbol_base: str) -> dict[str, Any]:
-    symbol = f"{symbol_base.upper()}/USDC"
-    if symbol not in get_settings().universe:
-        raise HTTPException(404, f"{symbol} not in universe")
+    # Resolve the base coin (e.g. "BTC", "SUI") to its FULL universe symbol rather
+    # than hardcoding a quote/format — the universe now uses Binance perp symbols
+    # ("{COIN}/USDT:USDT"), so a hardcoded "/USDC" would 404 for every pair.
+    base = symbol_base.upper()
+    symbol = next(
+        (s for s in get_settings().universe if s.split("/")[0].upper() == base), None
+    )
+    if symbol is None:
+        raise HTTPException(404, f"{base} not in universe")
     orch = HermesOrchestrator()
     state = await orch.tick(symbol)
     return {
