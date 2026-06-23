@@ -44,6 +44,13 @@ def pulse_entry(
             fz = round(float(s.features.get("funding_z", 0.0)), 2)
             gauges.append({"sleeve": "Funding #2", "metric": "funding z",
                            "val": fz, "thr": 2.0, "armed": fz >= 2.0})
+        elif s.skill_id == "funding_carry_harvest":
+            bps = round(float(s.features.get("funding_bps", 0.0)), 2)
+            arm = float(s.features.get("arm_bps", 2.0))
+            # status (not "armed"): it never trades naked — needs a hedge leg.
+            gauges.append({"sleeve": "Carry #3", "metric": "funding bps",
+                           "val": bps, "thr": arm, "armed": False,
+                           "status": "needs hedge leg" if bps >= arm else "low carry"})
     would_act, would_skill, reason = "HOLD", "", "no actionable signal"
     for s in signals:
         if s.side == "HOLD":

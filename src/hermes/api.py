@@ -171,6 +171,7 @@ _STRAT2_SKILLS = {
     "weekend_liquidity_fade", "funding_extreme_fade", "vr_antitrend_fade",
     "flow_exhaustion_fade", "cs_residual_reversal",
 }
+_STRAT3_SKILLS = {"funding_carry_harvest"}  # validated, display-only (needs hedge leg)
 
 
 def _equity_curve(closed_rows, start_equity: float, current_equity: float) -> list[dict]:
@@ -202,6 +203,7 @@ def _strategies_ab(closed_rows) -> dict:
     (diversifiers) — its live trades if any, plus the honest research status."""
     s1 = [r for r in closed_rows if (r.skill_id or "") in _STRAT1_SKILLS]
     s2 = [r for r in closed_rows if (r.skill_id or "") in _STRAT2_SKILLS]
+    s3 = [r for r in closed_rows if (r.skill_id or "") in _STRAT3_SKILLS]
     return {
         "strategy_1": {
             "label": "Momentum (selective)",
@@ -225,6 +227,21 @@ def _strategies_ab(closed_rows) -> dict:
                 "note": "funding_squeeze_continuation: validated OOS on BTC/ETH/SOL (Sharpe ~+1.1, "
                         "orthogonal rho~0.04), live funding feed wired. Long-only risk-on sleeve "
                         "(self-deactivates in deep bear). All other candidates failed cross-asset.",
+            },
+        },
+        "strategy_3": {
+            "label": "Funding carry (delta-neutral)",
+            # validated but NOT tradable on a perp-only venue — needs a spot-hedge leg
+            "status": "live" if s3 else "validated",
+            "live": _strategy_stats(s3),
+            "research": {
+                "oos_validated_bricks": 1,
+                "candidates_tested": 40,
+                "note": "Delta-neutral funding carry (cash-and-carry): validated OOS Sharpe +2.4..+4.5 "
+                        "on BTC/ETH/SOL, every fold positive, orthogonal to #1 AND #2 (rho~0.05), "
+                        "ACTIVE in calm markets. NOT tradable yet: a 9y test proved the NAKED perp "
+                        "short is OOS-NEGATIVE, so it needs a short-perp+long-spot hedge leg. "
+                        "Display-only gauge until that execution leg is built — never traded naked.",
             },
         },
     }
@@ -362,9 +379,11 @@ function renderLive(d){
   const syms=(d.universe||[]).filter(s=>bySym[s]);
   if(!syms.length){ el.innerHTML=head+'<div class="muted">no pulse logged yet — waiting for the next heartbeat</div>'; return; }
   const gbar=g=>{ const pct=Math.max(4,Math.min(100,100*(Number(g.val)/(g.thr||1))));
-    const col=g.armed?'#a6e3a1':'#89b4fa';
+    const col=g.armed?'#a6e3a1':(g.status?'#cba6f7':'#89b4fa');
+    const tag=g.status?`<span class="pill off">${esc(g.status)}</span>`
+      :(g.armed?'<span class="pill ok">ARMED</span>':'<span class="pill off">holding</span>');
     return `<div style="margin:6px 0"><div class="sub">${esc(g.sleeve)} — ${esc(g.metric)} <b>${f(g.val,2)}</b> / ${f(g.thr,2)} `
-      +(g.armed?'<span class="pill ok">ARMED</span>':'<span class="pill off">holding</span>')+`</div>`
+      +tag+`</div>`
       +`<div class="bar"><i style="width:${pct}%;background:${col}"></i></div></div>`; };
   el.innerHTML=head+`<div style="display:flex;gap:16px;flex-wrap:wrap">`
     +syms.map(sym=>{ const a=bySym[sym]; const gs=a.gauges||[];
@@ -377,7 +396,8 @@ function renderLive(d){
 }
 function renderAB(st){
   const card=s=>{ if(!s) return '';
-    const L=s.live||{}, badge=s.status==='live'?'<span class="pill ok">live</span>':'<span class="pill off">research</span>';
+    const L=s.live||{};
+    const badge=s.status==='live'?'<span class="pill ok">live</span>':`<span class="pill off">${esc(s.status||'research')}</span>`;
     let h=`<div style="flex:1;min-width:260px"><div style="font-weight:600;color:#fff;margin-bottom:6px">${esc(s.label)} ${badge}</div>`
       +`<table><tr><th>live trades</th><td>${L.n||0}</td></tr>`
       +`<tr><th>live win</th><td>${L.win_rate==null?'—':(100*L.win_rate).toFixed(0)+'%'}</td></tr>`
@@ -387,7 +407,8 @@ function renderAB(st){
         +`<br><span class="muted">${esc(r.note||'')}</span></div>`; }
     return h+`</div>`; };
   document.getElementById('ab').innerHTML=
-    `<div style="display:flex;gap:20px;flex-wrap:wrap">`+card(st.strategy_1)+card(st.strategy_2)+`</div>`;
+    `<div style="display:flex;gap:20px;flex-wrap:wrap">`
+    +card(st.strategy_1)+card(st.strategy_2)+card(st.strategy_3)+`</div>`;
 }
 function render(){
   const d=D; if(!d||!d.server_time) return;

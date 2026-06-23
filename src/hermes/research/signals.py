@@ -260,6 +260,36 @@ def funding_squeeze_continuation(df: pd.DataFrame) -> SkillSignal:
     )
 
 
+# --------------------------------------------------------------------------- #
+# funding_carry_harvest — Strategy #3 candidate: DELTA-NEUTRAL funding carry
+#    (classic cash-and-carry). Validated OOS Sharpe +2.4..+4.5, every fold
+#    positive, 3/3 assets, orthogonal to BOTH momentum (rho~0.05) and the squeeze
+#    sleeve (rho~0.05-0.10), and ACTIVE in calm markets (funding is positive ~80%
+#    of the time). BUT it only works HEDGED: a 9y test proved that as a NAKED perp
+#    short (all a perp-only venue can do) the edge is OOS-NEGATIVE — the price loss
+#    in the bull markets where funding is high dwarfs the carry. So this signal is
+#    DISPLAY/RESEARCH-ONLY: it is registered so the dashboard can show the carry
+#    gauge, but it is deliberately kept OUT of strategy.allowed_skills and ALWAYS
+#    returns HOLD, so it can NEVER place a (losing) naked trade. Promoting it to a
+#    live sleeve requires a delta-neutral execution leg (short perp + long spot).
+# --------------------------------------------------------------------------- #
+_CARRY_ARM_BPS = 2.0  # per-8h funding (bps) at/above which the carry trade arms
+
+
+def funding_carry_harvest(df: pd.DataFrame) -> SkillSignal:
+    sid = "funding_carry_harvest"
+    if "funding_rate" not in df.columns or len(df) < 2:
+        return _hold(sid, "missing funding_rate")
+    fr = float(df["funding_rate"].iloc[-1])
+    bps = fr * 1e4
+    # NEVER trades (HOLD): naked execution loses; needs a delta-neutral hedge leg.
+    return SkillSignal(
+        sid, "HOLD", 0.0, 0.02, 0.04,
+        f"funding carry level {bps:.2f}bps (arm>={_CARRY_ARM_BPS}); delta-neutral only",
+        {"funding_bps": float(bps), "arm_bps": _CARRY_ARM_BPS},
+    )
+
+
 # ======================= ROUND 2 — seasonality + persistence ================ #
 # Round 1 lesson: "fade" signals lost; the calendar one (weekend) survived. So
 # round 2 leans into calendar/seasonality and flow PERSISTENCE (not fade).

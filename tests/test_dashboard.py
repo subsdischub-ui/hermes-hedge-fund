@@ -36,3 +36,7 @@ def test_strategies_ab_attributes_funding_to_strategy_2():
     assert ab["strategy_2"]["status"] == "live"  # has closed funding trades
     assert "funding" in ab["strategy_2"]["label"].lower()
     assert ab["strategy_2"]["research"]["oos_validated_bricks"] == 1
+    # Strategy #3 (carry) present, validated, but never traded (no closed rows).
+    assert "carry" in ab["strategy_3"]["label"].lower()
+    assert ab["strategy_3"]["status"] == "validated"
+    assert ab["strategy_3"]["live"]["n"] == 0

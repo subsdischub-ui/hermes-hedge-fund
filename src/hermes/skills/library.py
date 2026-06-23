@@ -176,7 +176,7 @@ def trend_follow_ema(df: pd.DataFrame) -> SkillSignal:
 def _build_registry() -> dict[str, Skill]:
     """Build the active per-symbol slate. Lazy imports avoid the import cycle
     (the new skill modules import SkillSignal *from* this module)."""
-    from hermes.research.signals import funding_squeeze_continuation
+    from hermes.research.signals import funding_carry_harvest, funding_squeeze_continuation
     from hermes.skills.intraday_tod import intraday_tod_btc
     from hermes.skills.mean_reversion_regime import mean_reversion_regime
     from hermes.skills.ts_mom import ts_mom_vol_scaled
@@ -191,6 +191,16 @@ def _build_registry() -> dict[str, Skill]:
             id="funding_squeeze_continuation",
             description="Strategy #2 (validated OOS): extreme-positive perp funding (|z|>=2 over 180 bars) marks leveraged-demand trend continuation; LONG, ~24-bar hold. Orthogonal to momentum (daily-PnL rho~0.04). Needs a funding_rate column (attached live from Binance USDT-M).",
             fn=funding_squeeze_continuation,
+        ),
+        "funding_carry_harvest": Skill(
+            id="funding_carry_harvest",
+            # Strategy #3 (validated OOS Sharpe +2.4..+4.5, orthogonal to #1 & #2,
+            # calm-market active) — but DISPLAY-ONLY: always HOLD and intentionally
+            # absent from strategy.allowed_skills, because it only works DELTA-NEUTRAL
+            # (naked perp short is OOS-negative). Registered so the dashboard can show
+            # its gauge; promote only after a spot-hedge execution leg exists.
+            description="Strategy #3 (validated, NOT yet tradable): delta-neutral funding carry. Display-only gauge; needs a short-perp+long-spot hedge leg before it can trade.",
+            fn=funding_carry_harvest,
         ),
         "breakout_vol_expansion": Skill(
             id="breakout_vol_expansion",
