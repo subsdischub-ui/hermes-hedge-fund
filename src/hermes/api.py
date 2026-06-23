@@ -9,16 +9,41 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.responses import HTMLResponse
 from fastapi.security import APIKeyHeader
+from pydantic import BaseModel
 
 from hermes.execution import get_exchange
 from hermes.graph import HermesOrchestrator
 from hermes.learning import run_nightly_reflection, run_weekly_skill_rerank
+from hermes.llm.router import get_router
 from hermes.logging_setup import configure_logging, get_logger
 from hermes.memory.journal import TradeJournal
 from hermes.memory.store import get_db
 from hermes.risk.stage import StageManager
 from hermes.scheduler import build_scheduler
 from hermes.settings import get_settings
+
+log = get_logger(__name__)
+
+
+# Hermès' identity + rules for the operator-chat. He explains and advises about the
+# business; he can NEVER trade, move funds, or change config via the conversation.
+_CHAT_SYSTEM = """Tu es Hermès, l'agent de trading crypto autonome de cette entreprise \
+(fonds spéculatif personnel, micro-capital, Hyperliquid perps, paper-first). Tu parles \
+avec l'opérateur-fondateur, en français, avec une honnêteté absolue et de la concision \
+— pas de jargon gratuit, pas de promesses, pas de spin.
+
+RÈGLE STRICTE : tu DISCUTES et EXPLIQUES seulement. Tu n'exécutes AUCUNE action via cette \
+conversation — aucun trade, aucun changement de config, aucun mouvement de fonds. Si on te \
+demande d'agir, explique ce que tu ferais et renvoie l'opérateur vers l'action manuelle.
+
+TES 3 STRATÉGIES (toutes validées hors-échantillon, SÉLECTIVES — elles ne tradent QUE quand \
+leur jauge est armée, sinon elles attendent par discipline) :
+- #1 Momentum sélectif (ts_mom |score|>=1.0, long/short, ~48h) : trade les tendances établies.
+- #2 Funding squeeze (funding z>=2, long ~96h) : continuation sur funding extrême, orthogonale à #1.
+- #3 Funding carry delta-neutral (short perp + long spot, funding>=2bps, ~8j) : récolte le carry \
+en marché calme, market-neutral ; ne trade JAMAIS à nu (prouvé perdant sur 9 ans).
+PHILOSOPHIE : discipline > agitation. Forcer des trades dans le bruit détruit l'edge. La \
+croissance vient de la patience, de l'orthogonalité, et (plus tard, après les gates) du levier."""
 
 
 @asynccontextmanager
@@ -254,6 +279,87 @@ async def dashboard() -> str:
     return _DASHBOARD_HTML
 
 
+# ------------------------------- operator chat ----------------------------- #
+class ChatRequest(BaseModel):
+    message: str
+    history: list[dict[str, str]] = []
+
+
+async def _chat_context() -> str:
+    """Assemble Hermès' live state so the chat answers from reality, not vibes."""
+    s = get_settings()
+    try:
+        ex = get_exchange()
+        journal = TradeJournal()
+        equity = await ex.equity_usd()
+        positions = await ex.open_positions()
+        stats = await journal.stats()
+        closed = await journal.recent_closed(since=datetime.now(UTC) - timedelta(days=365))
+        ab = _strategies_ab(closed, positions)
+    except Exception as e:  # never let a context hiccup break the chat
+        return f"(état partiellement indisponible: {e})"
+
+    strat = "\n".join(
+        f"  - {ab[k]['label']} [{ab[k]['status']}]: {ab[k]['live'].get('n', 0)} trades, "
+        f"PnL ${ab[k]['live'].get('pnl_usd', 0)}"
+        for k in ("strategy_1", "strategy_2", "strategy_3") if k in ab
+    )
+    pos = ", ".join(
+        f"{p.symbol}/{p.skill_id}(qty={round(p.qty, 5)}, uPnL ${round(p.unrealized_pnl_usd, 3)})"
+        for p in positions
+    ) or "aucune"
+    seen: dict[str, int] = {}
+    gauges: list[str] = []
+    for a in sorted((x for x in _recent_activity(s) if x.get("kind") == "pulse"),
+                    key=lambda a: a.get("ts", ""), reverse=True):
+        sym = a.get("symbol")
+        if sym in seen:
+            continue
+        seen[sym] = 1
+        gl = "; ".join(
+            f"{g['sleeve']} {g['metric']} {g['val']}/{g['thr']} {'ARMÉ' if g.get('armed') else 'attend'}"
+            for g in (a.get("gauges") or [])
+        )
+        gauges.append(f"  - {sym} [{a.get('regime')}]: {gl}")
+    return (
+        f"ÉTAT LIVE DE NOTRE ENTREPRISE ({s.stage}):\n"
+        f"- Capital paper: ${equity:.2f} (bankroll ${s.bankroll_usd}); univers {', '.join(s.universe)}\n"
+        f"- Journal: {stats.get('count', 0)} trades clos, "
+        f"win {stats.get('win_rate')}, PnL ${stats.get('pnl_usd', 0)}\n"
+        f"- Stratégies:\n{strat}\n"
+        f"- Positions ouvertes: {pos}\n"
+        f"- Ce que chaque sleeve voit maintenant:\n{chr(10).join(gauges) or '  (pas de pulse récent)'}"
+    )
+
+
+@app.post("/chat", dependencies=[Depends(require_api_key)])
+async def chat(req: ChatRequest) -> dict[str, Any]:
+    if not (req.message or "").strip():
+        raise HTTPException(status_code=400, detail="message vide")
+    context = await _chat_context()
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": _CHAT_SYSTEM + "\n\n" + context}
+    ]
+    for h in (req.history or [])[-10:]:
+        role, content = h.get("role"), h.get("content")
+        if role in ("user", "assistant") and content:
+            messages.append({"role": role, "content": str(content)[:4000]})
+    messages.append({"role": "user", "content": req.message[:4000]})
+    try:
+        out = await get_router().chat(
+            agent_role="chat", messages=messages, temperature=0.4, max_tokens=900
+        )
+    except Exception as e:
+        log.warning("chat_llm_failed", error=str(e))
+        raise HTTPException(status_code=502, detail=f"LLM indisponible: {e}") from e
+    return {"reply": out.get("content") or "(pas de réponse)", "model": out.get("model")}
+
+
+@app.get("/chat", response_class=HTMLResponse)
+async def chat_page() -> str:
+    return _CHAT_HTML
+
+
 @app.post("/tick/{symbol_base}", dependencies=[Depends(require_api_key)])
 async def manual_tick(symbol_base: str) -> dict[str, Any]:
     symbol = f"{symbol_base.upper()}/USDC"
@@ -315,6 +421,7 @@ _DASHBOARD_HTML = """<!doctype html>
 <header>
   <h1>Hermès</h1><span class="stage" id="stage">…</span>
   <span class="sub" id="clock"></span>
+  <a href="/chat" style="margin-left:auto;font-size:14px">💬 parler à Hermès</a>
 </header>
 <div class="wrap">
   <div class="card" style="grid-column:1/-1;border-color:#3a4a6a">
@@ -478,4 +585,66 @@ function render(){
     :'<div class="muted">—</div>';
 }
 tick();setInterval(tick,20000);
+</script></body></html>"""
+
+
+_CHAT_HTML = """<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Hermès — chat</title>
+<style>
+  :root{color-scheme:dark}
+  body{margin:0;background:#0b0e14;color:#cdd6f4;font:15px/1.5 system-ui,sans-serif;
+    display:flex;flex-direction:column;height:100vh}
+  header{padding:12px 18px;border-bottom:1px solid #1d2230;display:flex;gap:12px;align-items:center}
+  header h1{font-size:18px;margin:0}.sub{color:#6c7693;font-size:13px}
+  a{color:#89b4fa}
+  #log{flex:1;overflow:auto;padding:18px;display:flex;flex-direction:column;gap:12px;max-width:820px;width:100%;margin:0 auto;box-sizing:border-box}
+  .msg{padding:10px 14px;border-radius:12px;max-width:85%;white-space:pre-wrap;word-wrap:break-word}
+  .me{align-self:flex-end;background:#1e2a44;border:1px solid #2a3a5e}
+  .bot{align-self:flex-start;background:#11161f;border:1px solid #1d2230}
+  .meta{color:#6c7693;font-size:11px;margin-top:4px}
+  form{display:flex;gap:8px;padding:12px 18px;border-top:1px solid #1d2230;max-width:820px;width:100%;margin:0 auto;box-sizing:border-box}
+  input,textarea{background:#0b0e14;border:1px solid #2a3346;color:#cdd6f4;border-radius:8px;padding:9px 11px;font:15px sans-serif}
+  #msg{flex:1;resize:none}
+  button{background:#89b4fa;color:#0b0e14;border:0;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  #keyrow{padding:10px 18px;border-bottom:1px solid #1d2230;display:flex;gap:8px;align-items:center;max-width:820px;width:100%;margin:0 auto;box-sizing:border-box}
+</style></head>
+<body>
+<header><h1>Hermès</h1><span class="sub">parle avec l'agent de notre entreprise</span>
+  <a href="/dashboard" style="margin-left:auto">← dashboard</a></header>
+<div id="keyrow">
+  <input id="key" type="password" placeholder="ta clé API (x-api-key)" style="flex:1"/>
+  <button id="savekey" type="button">enregistrer</button>
+</div>
+<div id="log"></div>
+<form id="f">
+  <textarea id="msg" rows="2" placeholder="Demande-lui où en est l'entreprise, pourquoi il ne trade pas, sa stratégie…"></textarea>
+  <button id="send" type="submit">envoyer</button>
+</form>
+<script>
+const log=document.getElementById('log'), keyEl=document.getElementById('key');
+keyEl.value=localStorage.getItem('hermes_key')||'';
+document.getElementById('savekey').onclick=()=>{localStorage.setItem('hermes_key',keyEl.value.trim());add('bot','Clé enregistrée. Pose ta question.');};
+const hist=[];
+const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+function add(who,text,meta){const d=document.createElement('div');d.className='msg '+(who==='me'?'me':'bot');
+  d.innerHTML=esc(text)+(meta?`<div class="meta">${esc(meta)}</div>`:'');log.appendChild(d);log.scrollTop=log.scrollHeight;return d;}
+add('bot',"Salut. Je suis Hermès. Demande-moi où en est notre entreprise, ce que voient les stratégies, ou pourquoi je tiens ma position. (Je discute seulement — je n'exécute aucune action ici.)");
+document.getElementById('f').onsubmit=async e=>{e.preventDefault();
+  const m=document.getElementById('msg').value.trim(); const key=keyEl.value.trim();
+  if(!m)return; if(!key){add('bot','Entre d\\'abord ta clé API en haut, puis enregistre.');return;}
+  add('me',m); document.getElementById('msg').value=''; const btn=document.getElementById('send'); btn.disabled=true;
+  const think=add('bot','…');
+  try{
+    const r=await fetch('/chat',{method:'POST',headers:{'content-type':'application/json','x-api-key':key},
+      body:JSON.stringify({message:m,history:hist.slice(-10)})});
+    const j=await r.json();
+    if(!r.ok){think.textContent='Erreur: '+(j.detail||r.status);}
+    else{think.innerHTML=esc(j.reply)+`<div class="meta">${esc(j.model||'')}</div>`;
+      hist.push({role:'user',content:m}); hist.push({role:'assistant',content:j.reply});}
+  }catch(err){think.textContent='Erreur réseau: '+err;}
+  finally{btn.disabled=false; document.getElementById('msg').focus();}
+};
+document.getElementById('msg').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();document.getElementById('f').requestSubmit();}});
 </script></body></html>"""
