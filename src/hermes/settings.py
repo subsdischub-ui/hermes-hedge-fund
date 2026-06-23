@@ -89,27 +89,24 @@ class Settings(BaseSettings):
     # --- properties ---------------------------------------------------------
     @property
     def universe(self) -> list[str]:
-        # The HERMES_UNIVERSE env var wins (operator override, no redeploy needed);
-        # otherwise the yaml `universe:` list drives it so the traded universe is
-        # code-controlled and deploys with the repo; else the field default.
-        import os
-
-        if not os.environ.get("HERMES_UNIVERSE"):
-            y = self.yaml("universe")
-            if isinstance(y, list) and y:
-                return [str(x).strip() for x in y if str(x).strip()]
+        # The traded universe is STRATEGY config tightly coupled to the validated
+        # code (symbols must match the data feed + skills), so the yaml `universe:`
+        # list is AUTHORITATIVE and deploys with the repo. HERMES_UNIVERSE (env) is
+        # only a fallback when the yaml list is absent — this deliberately ignores a
+        # stale boilerplate env var so the code-controlled universe always wins.
+        y = self.yaml("universe")
+        if isinstance(y, list) and y:
+            return [str(x).strip() for x in y if str(x).strip()]
         return [s.strip() for s in self.universe_raw.split(",") if s.strip()]
 
     @property
     def exchange_primary(self) -> str:
-        # EXCHANGE_PRIMARY env wins; otherwise yaml `data_venue:` drives it (code-
-        # controlled, deploys with the repo); else the field default (binanceusdm).
-        import os
-
-        if not os.environ.get("EXCHANGE_PRIMARY"):
-            y = self.yaml("data_venue")
-            if isinstance(y, str) and y.strip():
-                return y.strip()
+        # Same rationale as `universe`: the data venue is code-controlled — yaml
+        # `data_venue:` is authoritative, EXCHANGE_PRIMARY env is the absent-yaml
+        # fallback only (so a stale env var can't pin us to the wrong venue).
+        y = self.yaml("data_venue")
+        if isinstance(y, str) and y.strip():
+            return y.strip()
         return self.exchange_primary_raw
 
     @property
