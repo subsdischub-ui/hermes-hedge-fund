@@ -60,6 +60,24 @@ async def test_paper_roundtrip_preserves_equity(tmp_data_dir: Path):
 
 
 @pytest.mark.asyncio
+async def test_short_open_does_not_inflate_equity(tmp_data_dir: Path):
+    """Opening a SHORT must NOT increase equity by the notional — equity = cash +
+    signed_qty*px, so a fresh short is ~flat (minus fees), and profits as price falls."""
+    px = _make_px(tmp_data_dir, name="paper_short.json")
+    eq0 = await px.equity_usd()
+    assert eq0 == pytest.approx(100.0, rel=1e-9)
+
+    await px.place_order(Order(symbol="BTC/USDT:USDT", side="SELL", qty=0.001))  # ~$50 short
+    eq1 = await px.equity_usd()
+    assert abs(eq1 - eq0) < 1.0, f"short open inflated equity to {eq1} (notional double-count)"
+
+    px.market.last_price_value = 49_000.0  # type: ignore[attr-defined]  # -2% -> short profits
+    eq2 = await px.equity_usd()
+    assert eq2 > eq1  # the short gains as price drops
+    assert eq2 == pytest.approx(eq1 + 0.001 * 1000.0, abs=0.05)  # ~ qty * price drop
+
+
+@pytest.mark.asyncio
 async def test_two_skills_hold_same_symbol_concurrently(tmp_data_dir: Path):
     """A/B concurrency: Strategy #1 (momentum) and #2 (funding) each hold ONE BTC
     position at once; they don't net together and close independently."""

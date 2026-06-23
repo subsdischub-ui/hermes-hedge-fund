@@ -224,36 +224,45 @@ class LLMRouter:
         schema: dict[str, Any],
         temperature: float = 0.1,
     ) -> dict[str, Any]:
-        """JSON-mode helper.
+        """JSON-mode helper, resilient to providers that reject `json_schema`.
 
-        Many local servers (Ollama, LM Studio) silently ignore `response_format`
-        with `json_schema` and return free-form text. We therefore:
-          1. Ask for `json_schema` strict mode (honoured by OpenAI-compatible servers).
-          2. Also instruct the model to emit ONLY JSON in the system message.
-          3. On parse failure, try to extract the first {...} block and reparse.
-          4. If still unparseable, return an empty dict and log — never crash callers.
+        DeepSeek V4 returns 400 "This response_format type is unavailable now" for
+        `json_schema`; other servers (Ollama/LM Studio) silently ignore it. So we
+        DEGRADE GRACEFULLY: try strict `json_schema`, then `json_object` (DeepSeek
+        supports this), then no `response_format` at all — each step retries on a 400
+        response_format error. The prompt also instructs the model to emit ONLY JSON,
+        and we extract the first {...} block, so a caller never hard-fails.
         """
-        response_format = {
-            "type": "json_schema",
-            "json_schema": {"name": "hermes_output", "schema": schema, "strict": True},
-        }
-        out = await self.chat(
-            agent_role=agent_role,
-            messages=messages,
-            response_format=response_format,
-            temperature=temperature,
-        )
-        raw = out["content"] or "{}"
-        parsed = _extract_json(raw)
-        if not isinstance(parsed, dict):
-            log.warning(
-                "llm_structured_parse_failed",
-                agent=agent_role,
-                target=out.get("target"),
-                preview=str(raw)[:200],
-            )
-            return {}
-        return parsed
+        formats: list[dict[str, Any] | None] = [
+            {"type": "json_schema",
+             "json_schema": {"name": "hermes_output", "schema": schema, "strict": True}},
+            {"type": "json_object"},
+            None,
+        ]
+        last_preview = ""
+        for rf in formats:
+            try:
+                out = await self.chat(
+                    agent_role=agent_role,
+                    messages=messages,
+                    response_format=rf,
+                    temperature=temperature,
+                )
+            except APIStatusError as e:
+                # 400 = this provider doesn't support that response_format -> try the
+                # next, simpler one. Any other status is a real error -> surface it.
+                if getattr(e, "status_code", None) == 400:
+                    log.info("llm_response_format_unsupported", agent=agent_role,
+                             response_format=(rf or {}).get("type") if rf else "none")
+                    continue
+                raise
+            raw = out["content"] or "{}"
+            last_preview = str(raw)[:200]
+            parsed = _extract_json(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        log.warning("llm_structured_parse_failed", agent=agent_role, preview=last_preview)
+        return {}
 
 
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)

@@ -131,18 +131,14 @@ class PaperExchange(Exchange):
         for p in self._state["positions"].values():
             sym = p["symbol"]
             px = await self._safe_last_price(sym, fallback=float(p["entry_price"]))
-            # For longs (qty>0): inventory worth qty*px is added.
-            # For shorts (qty<0): liability is |qty|*px; entry already credited cash,
-            # so we add qty*px (negative) + qty*(entry-px)*(-1) → net = entry*qty for short.
-            # Simpler formulation: equity = cash + Σ qty*px for longs - liability for shorts.
-            if p["qty"] >= 0:
-                total += float(p["qty"]) * px
-            else:
-                # short: cash was credited entry*|qty|; current liability is |qty|*px.
-                # Net contribution = -|qty|*px + |qty|*entry = qty*(entry-px) → qty*entry - qty*px
-                # But cash already holds entry*|qty| from open; we only need to add the
-                # mark-to-market delta: qty*(entry - px) = (entry-px)*qty (qty<0).
-                total += float(p["qty"]) * (px - float(p["entry_price"]))
+            # equity = cash + Σ (signed_qty * mark_price), for BOTH longs and shorts:
+            # open debits cash by the long notional / credits it by the short notional,
+            # so adding signed_qty*px reconstructs C0 + unrealized PnL in one formula.
+            #   long  (qty>0): C0 - |q|*entry + |q|*px = C0 + |q|*(px-entry)  ✓
+            #   short (qty<0): C0 + |q|*entry - |q|*px = C0 + |q|*(entry-px)  ✓
+            # (The previous short branch added qty*(px-entry), double-counting the
+            #  cash credit and inflating equity by the open short's notional.)
+            total += float(p["qty"]) * px
         # Delta-neutral carry pairs: price legs cancel, so only the accrued funding
         # (carry collected so far) contributes to equity.
         for cp in self._state.get("carry_positions", {}).values():
