@@ -63,9 +63,9 @@ class Settings(BaseSettings):
     # drives it; EXCHANGE_PRIMARY env overrides.
     exchange_primary_raw: str = Field("binanceusdm", alias="EXCHANGE_PRIMARY")
     exchange_backup: str = Field("bybit", alias="EXCHANGE_BACKUP")
-    # Venue used by the paper exchange to fetch reference prices. Must list our
-    # USDC-quoted universe. Kraken and Coinbase Advanced both do; Binance does not.
-    paper_price_venue: str = Field("kraken", alias="PAPER_PRICE_VENUE")
+    # Venue the paper book prices fills at — see the paper_price_venue property
+    # (defaults to the data venue so fills + OHLCV come from the SAME exchange).
+    paper_price_venue_raw: str = Field("", alias="PAPER_PRICE_VENUE")
     hl_testnet: bool = Field(True, alias="HL_TESTNET")
     hl_account_address: str = Field("", alias="HL_ACCOUNT_ADDRESS")
     hl_secret_key: SecretStr = Field(SecretStr(""), alias="HL_SECRET_KEY")
@@ -108,6 +108,17 @@ class Settings(BaseSettings):
         if isinstance(y, str) and y.strip():
             return y.strip()
         return self.exchange_primary_raw
+
+    @property
+    def paper_price_venue(self) -> str:
+        # Price the paper book at the SAME venue it pulls OHLCV from, so fills and
+        # the prices the strategy sees are consistent (a stale PAPER_PRICE_VENUE=kraken
+        # env that lacks the Binance perp symbols is deliberately ignored — yaml
+        # `paper_price_venue:` overrides if you really need a different venue).
+        y = self.yaml("paper_price_venue")
+        if isinstance(y, str) and y.strip():
+            return y.strip()
+        return self.exchange_primary
 
     @property
     def stage_config(self) -> dict[str, Any]:
