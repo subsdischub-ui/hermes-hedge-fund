@@ -83,14 +83,17 @@ strategy:
   # Strategy #1 = momentum (ts_mom + mean_reversion). Strategy #2 = funding_squeeze_continuation
   # (validated OOS Sharpe ~+1.1, orthogonal rho~0.04). funding is NOT conviction-gated
   # (it self-selects at funding z>=2), so it is exempt from conviction_min automatically.
-  allowed_skills: [ts_mom_vol_scaled, mean_reversion_regime, funding_squeeze_continuation]
-  conviction_min: 1.0          # ts_mom |score| saturation; mean_reversion & funding self-select
+  # #3 funding_carry_harvest is delta-neutral (the paper book routes it STRUCTURALLY
+  # to a short-perp+long-spot pair, never a naked order) so it is safe in the slate.
+  allowed_skills: [ts_mom_vol_scaled, mean_reversion_regime, funding_squeeze_continuation, funding_carry_harvest]
+  conviction_min: 1.0          # ts_mom |score| saturation; mean_reversion/funding/carry self-select
   no_pyramid: true             # one position per symbol at a time (consolidation)
   maker_orders: true           # prefer post-only limit fills; real fill rate measured on testnet
   decision_timeframe: 4h       # the rule is validated on 4h bars (decision loop + skills)
   max_hold_bars: 12            # default time exit = 12x4h ~ 48h (Strategy #1 vertical barrier)
   max_hold_bars_by_skill:      # per-strategy horizon overrides (mirror each backtest barrier)
     funding_squeeze_continuation: 24   # Strategy #2 validated on a ~24x4h ~ 96h hold
+    funding_carry_harvest: 48          # Strategy #3 delta-neutral carry ~48x4h ~ 8 days
 
 fees:
   # Hyperliquid taker/maker fees in basis points (mid-2026). The paper exchange

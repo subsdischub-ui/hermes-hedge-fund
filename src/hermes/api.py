@@ -148,7 +148,7 @@ async def dashboard_data() -> dict[str, Any]:
         "breakdown": await journal.breakdown(),
         "activity": _recent_activity(s),
         "equity_curve": _equity_curve(all_closed, s.bankroll_usd, equity),
-        "strategies": _strategies_ab(all_closed),
+        "strategies": _strategies_ab(all_closed, positions),
         "server_time": datetime.now(UTC).isoformat(),
     }
 
@@ -198,12 +198,14 @@ def _strategy_stats(rows) -> dict:
     }
 
 
-def _strategies_ab(closed_rows) -> dict:
-    """Side-by-side A/B: Strategy #1 (momentum) LIVE from the journal, Strategy #2
-    (diversifiers) — its live trades if any, plus the honest research status."""
+def _strategies_ab(closed_rows, open_positions=None) -> dict:
+    """Side-by-side A/B of the three sleeves: each shows its live (closed) trades plus
+    an honest research/status line. Strategy #3 (carry) flips to live the moment a
+    delta-neutral pair is OPEN, even before the first one closes."""
     s1 = [r for r in closed_rows if (r.skill_id or "") in _STRAT1_SKILLS]
     s2 = [r for r in closed_rows if (r.skill_id or "") in _STRAT2_SKILLS]
     s3 = [r for r in closed_rows if (r.skill_id or "") in _STRAT3_SKILLS]
+    carry_open = any((getattr(p, "skill_id", "") or "") in _STRAT3_SKILLS for p in (open_positions or []))
     return {
         "strategy_1": {
             "label": "Momentum (selective)",
@@ -231,17 +233,17 @@ def _strategies_ab(closed_rows) -> dict:
         },
         "strategy_3": {
             "label": "Funding carry (delta-neutral)",
-            # validated but NOT tradable on a perp-only venue — needs a spot-hedge leg
-            "status": "live" if s3 else "validated",
+            # live once a carry pair is open or has closed; the two-leg engine is wired
+            "status": "live" if (s3 or carry_open) else "validated",
             "live": _strategy_stats(s3),
             "research": {
                 "oos_validated_bricks": 1,
                 "candidates_tested": 40,
                 "note": "Delta-neutral funding carry (cash-and-carry): validated OOS Sharpe +2.4..+4.5 "
-                        "on BTC/ETH/SOL, every fold positive, orthogonal to #1 AND #2 (rho~0.05), "
-                        "ACTIVE in calm markets. NOT tradable yet: a 9y test proved the NAKED perp "
-                        "short is OOS-NEGATIVE, so it needs a short-perp+long-spot hedge leg. "
-                        "Display-only gauge until that execution leg is built — never traded naked.",
+                        "on BTC/ETH/SOL, orthogonal to #1 AND #2 (rho~0.05), active in calm markets. "
+                        "Now WIRED in paper as a two-leg pair (short perp + long spot, MAKER fees) — "
+                        "the carry skill routes structurally to the hedged path, NEVER a naked order "
+                        "(a 9y test proved naked is OOS-negative). Real-money cross-venue leg pending.",
             },
         },
     }

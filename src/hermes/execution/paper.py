@@ -64,6 +64,9 @@ class PaperExchange(Exchange):
                 # and funding #2) can each hold ONE position on the same symbol
                 # concurrently. Each value also stores "symbol" and "skill_id".
                 "positions": {},
+                # Strategy #3 delta-neutral carry PAIRS (short perp + long spot),
+                # keyed by symbol; price-neutral, accrue funding over the hold.
+                "carry_positions": {},
                 "history": [],
             }
             self._save()
@@ -140,6 +143,10 @@ class PaperExchange(Exchange):
                 # But cash already holds entry*|qty| from open; we only need to add the
                 # mark-to-market delta: qty*(entry - px) = (entry-px)*qty (qty<0).
                 total += float(p["qty"]) * (px - float(p["entry_price"]))
+        # Delta-neutral carry pairs: price legs cancel, so only the accrued funding
+        # (carry collected so far) contributes to equity.
+        for cp in self._state.get("carry_positions", {}).values():
+            total += float(cp.get("accrued_funding_usd", 0.0))
         return total
 
     async def open_positions(self) -> list[Position]:
@@ -164,10 +171,108 @@ class PaperExchange(Exchange):
                     thesis=p.get("thesis", ""),
                 )
             )
+        # Carry pairs surface as a delta-neutral (qty=0) position whose unrealized
+        # PnL is the funding accrued so far — so the dashboard shows #3 working.
+        for cp in self._state.get("carry_positions", {}).values():
+            opened_at = cp["opened_at"]
+            if isinstance(opened_at, str):
+                opened_at = datetime.fromisoformat(opened_at)
+            out.append(
+                Position(
+                    symbol=cp["symbol"], qty=0.0, entry_price=float(cp["entry_price"]),
+                    stop_price=None, take_profit=None, opened_at=opened_at,
+                    unrealized_pnl_usd=float(cp.get("accrued_funding_usd", 0.0)),
+                    skill_id=cp.get("skill_id", "funding_carry_harvest"),
+                    thesis=cp.get("thesis", "delta-neutral carry"),
+                )
+            )
         return out
+
+    # ---- delta-neutral carry (Strategy #3) ----------------------------------
+    CARRY_SKILL = "funding_carry_harvest"
+    CARRY_MAKER_BPS = 5.0  # per fill; 4 fills/round-trip pair = 20bps = the validated maker cost
+
+    async def _open_carry(self, order: Order) -> Fill:
+        """Open a delta-neutral carry PAIR: SHORT perp + LONG spot, equal notional,
+        MAKER fees both legs. Price legs net to ~0 delta; only fees touch cash now."""
+        async with self._lock:
+            mid = order.price or await self.last_price(order.symbol)
+            qty = float(order.qty)
+            notional = mid * qty
+            fee = notional * (self.CARRY_MAKER_BPS / 10_000) * 2  # short + long maker legs
+            self._state["cash_usd"] -= fee
+            self._state.setdefault("carry_positions", {})[order.symbol] = {
+                "symbol": order.symbol, "qty": qty, "entry_price": mid,
+                "opened_at": datetime.now(UTC).isoformat(),
+                "accrued_funding_usd": 0.0,
+                "entry_funding_bps": float(order.extra.get("funding_bps", 0.0)),
+                "skill_id": self.CARRY_SKILL,
+                "thesis": order.extra.get("thesis", "delta-neutral funding carry"),
+            }
+            self._save()
+        log.info("paper_carry_open", symbol=order.symbol, qty=qty, notional=notional, fee=fee)
+        return Fill(order_id=order.client_id or f"carry-{uuid4().hex[:8]}",
+                    symbol=order.symbol, side="SELL", qty=qty, price=mid, fee_usd=fee)
+
+    def settle_carry_funding(self, symbol: str, funding_bps: float) -> float:
+        """Credit one 8h funding settlement to an open carry pair (short receives
+        positive funding). Returns the USD credited. The live 8h loop / the close
+        path drives this; pure + unit-testable."""
+        cp = self._state.get("carry_positions", {}).get(symbol)
+        if not cp:
+            return 0.0
+        notional = float(cp["qty"]) * float(cp["entry_price"])
+        usd = notional * (float(funding_bps) / 10_000.0)
+        cp["accrued_funding_usd"] = float(cp.get("accrued_funding_usd", 0.0)) + usd
+        self._save()
+        return usd
+
+    async def _close_carry(self, symbol: str, reason: str) -> Fill | None:
+        """Close BOTH legs atomically; realized PnL = accrued funding - close fees
+        (price deltas cancel). Books to history under skill funding_carry_harvest."""
+        async with self._lock:
+            cp = self._state.get("carry_positions", {}).get(symbol)
+            if not cp:
+                return None
+            mid = await self._safe_last_price(symbol, fallback=float(cp["entry_price"]))
+            notional = float(cp["qty"]) * mid
+            fee = notional * (self.CARRY_MAKER_BPS / 10_000) * 2
+            # If no explicit 8h settlements were credited (the live loop / tests drive
+            # settle_carry_funding), book the ACTUAL funding that settled over the hold
+            # from the exchange feed (short receives positive funding). Best-effort: on
+            # any failure the accrued stays as-is (tests control it via settle_*).
+            if float(cp.get("accrued_funding_usd", 0.0)) == 0.0:
+                opened = cp["opened_at"]
+                if isinstance(opened, str):
+                    opened = datetime.fromisoformat(opened)
+                entry_notional = float(cp["qty"]) * float(cp["entry_price"])
+                try:
+                    fdf = await self.market.funding_history(symbol)
+                    if fdf is not None and not getattr(fdf, "empty", True):
+                        m = (fdf["ts"] > opened) & (fdf["ts"] <= datetime.now(UTC))
+                        cp["accrued_funding_usd"] = entry_notional * float(fdf.loc[m, "funding_rate"].sum())
+                except Exception as e:
+                    log.warning("carry_funding_accrual_failed", symbol=symbol, error=str(e))
+            realized = float(cp.get("accrued_funding_usd", 0.0)) - fee
+            self._state["cash_usd"] += realized
+            self._state["history"].append({
+                "symbol": symbol, "closed_at": datetime.now(UTC).isoformat(),
+                "qty_closed": float(cp["qty"]), "pnl_usd": float(realized),
+                "skill_id": self.CARRY_SKILL, "thesis": cp.get("thesis", ""),
+                "pair_type": "carry", "reason": reason,
+            })
+            self._state["carry_positions"].pop(symbol, None)
+            self._save()
+        log.info("paper_carry_close", symbol=symbol, realized=realized, reason=reason)
+        return Fill(order_id=f"carry-{uuid4().hex[:8]}", symbol=symbol, side="BUY",
+                    qty=float(cp["qty"]), price=mid, fee_usd=fee)
 
     # ---- order entry --------------------------------------------------------
     async def place_order(self, order: Order) -> Fill:
+        # Structural safety: the carry skill can ONLY open a hedged two-leg pair —
+        # never a naked single-leg order (which is OOS-negative). Routed by skill_id.
+        if order.extra.get("skill_id") == self.CARRY_SKILL:
+            return await self._open_carry(order)
         async with self._lock:
             mid = order.price or await self.last_price(order.symbol)
             # Apply paper slippage: BUY pays slightly above mid, SELL receives below.
@@ -272,6 +377,10 @@ class PaperExchange(Exchange):
     async def close_position(
         self, symbol: str, reason: str, skill_id: str | None = None
     ) -> Fill | None:
+        # Carry pairs close as a delta-neutral unit (both legs) via the carry path.
+        if (skill_id == self.CARRY_SKILL or skill_id is None) and \
+                symbol in self._state.get("carry_positions", {}):
+            return await self._close_carry(symbol, reason)
         positions = self._state["positions"]
         if skill_id is not None:
             # Close the SPECIFIC (symbol, skill) position (the stop watcher path).

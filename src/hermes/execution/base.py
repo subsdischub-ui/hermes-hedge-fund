@@ -50,6 +50,23 @@ class Position:
     thesis: str = ""
 
 
+@dataclass
+class CarryPosition:
+    """A delta-neutral funding-carry PAIR: SHORT perp + LONG spot of the same asset,
+    equal notional. The price deltas cancel (delta ~ 0); the position earns the perp
+    funding cashflow over the hold. Strategy #3's ONLY executable form — a naked perp
+    short is OOS-negative, so the carry skill routes here, never to a single-leg order.
+    """
+    symbol: str
+    qty: float                          # base-asset size of EACH leg (short perp / long spot)
+    entry_price: float                  # ~ same for both legs (basis ~ 0 in paper)
+    opened_at: datetime
+    accrued_funding_usd: float = 0.0    # carry collected so far (realized at close)
+    entry_funding_bps: float = 0.0      # per-8h funding at entry (audit / display estimate)
+    skill_id: str = "funding_carry_harvest"
+    thesis: str = ""
+
+
 class Exchange(Protocol):
     name: str
 

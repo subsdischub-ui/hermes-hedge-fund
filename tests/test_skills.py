@@ -56,16 +56,11 @@ def test_funding_strategy2_holds_without_funding_column():
     assert sigs["funding_squeeze_continuation"].side == "HOLD"
 
 
-def test_funding_carry_strategy3_registered_but_never_tradable():
-    """Strategy #3 (carry) is registered for its dashboard gauge but MUST NOT be in
-    the live trading slate (naked execution loses) — a hard safety invariant."""
-    from hermes.risk.selective import load_selective_config
-    from hermes.settings import get_settings
-
+def test_funding_carry_strategy3_registered_and_arms_when_funding_high():
+    """Strategy #3 (carry) is registered and, when funding clears the arm level,
+    emits BUY. Its SAFETY is structural (the paper book routes the carry skill_id to
+    a delta-neutral pair, never a naked order — verified in test_paper_exchange)."""
     lib = get_skill_library()
-    sigs = {s.skill_id: s for s in lib.evaluate_all(_funding_df())}
-    assert "funding_carry_harvest" in sigs            # registered (gauge computes)
-    assert sigs["funding_carry_harvest"].side == "HOLD"   # never proposes a trade
-
-    cfg = load_selective_config(get_settings())
-    assert "funding_carry_harvest" not in cfg.allowed_skills  # never reaches execution
+    sigs = {s.skill_id: s for s in lib.evaluate_all(_funding_df())}  # last funding = 200 bps
+    assert "funding_carry_harvest" in sigs
+    assert sigs["funding_carry_harvest"].side == "BUY"   # armed -> delta-neutral pair

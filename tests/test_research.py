@@ -235,20 +235,24 @@ def test_funding_continuation_holds_when_not_extreme():
     assert funding_squeeze_continuation(df).side == "HOLD"
 
 
-def test_funding_carry_harvest_is_display_only_hold_with_bps():
-    """Strategy #3 (delta-neutral carry) is DISPLAY-ONLY: it must ALWAYS return HOLD
-    (naked execution loses) but expose the funding level in bps for the gauge."""
+def test_funding_carry_harvest_arms_above_threshold_else_holds():
+    """Strategy #3: HOLD below the 2bps arm level, BUY at/above it (the BUY routes
+    STRUCTURALLY to a delta-neutral pair in the paper book, never a naked order)."""
     from hermes.research.signals import funding_carry_harvest
 
-    n = 50
-    fr = np.full(n, 0.0003)  # 3 bps/8h funding -> above the 2bps arm level
-    close = np.full(n, 100.0)
-    df = pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
-                       "funding_rate": fr})
-    sig = funding_carry_harvest(df)
-    assert sig.side == "HOLD"                       # never trades naked
-    assert abs(sig.features["funding_bps"] - 3.0) < 1e-6
-    assert sig.features["arm_bps"] == 2.0
+    def _df(funding):
+        n = 50
+        close = np.full(n, 100.0)
+        return pd.DataFrame({"close": close, "high": close * 1.01, "low": close * 0.99,
+                             "funding_rate": np.full(n, funding)})
+
+    low = funding_carry_harvest(_df(0.0001))   # 1 bps < 2 -> hold
+    assert low.side == "HOLD"
+    assert abs(low.features["funding_bps"] - 1.0) < 1e-6
+
+    armed = funding_carry_harvest(_df(0.0003))  # 3 bps >= 2 -> arm (delta-neutral pair)
+    assert armed.side == "BUY"
+    assert abs(armed.features["funding_bps"] - 3.0) < 1e-6
 
 
 def test_funding_continuation_does_not_short_negative_funding():

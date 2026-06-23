@@ -84,6 +84,35 @@ async def test_two_skills_hold_same_symbol_concurrently(tmp_data_dir: Path):
 
 
 @pytest.mark.asyncio
+async def test_carry_pair_opens_delta_neutral_accrues_and_closes(tmp_data_dir: Path):
+    """Strategy #3: the carry skill opens a DELTA-NEUTRAL pair (never a naked order),
+    accrues funding over the hold, and realizes carry - fees on close."""
+    px = _make_px(tmp_data_dir, name="paper_carry.json")
+    eq0 = await px.equity_usd()
+
+    # Placing the carry skill_id routes STRUCTURALLY to the two-leg pair path.
+    await px.place_order(Order(symbol="BTC/USDC", side="BUY", qty=0.001,
+                               extra={"skill_id": "funding_carry_harvest"}))
+    # No naked directional position exists; the pair shows as delta-neutral (qty=0).
+    assert px._state["positions"] == {}                       # nothing naked
+    pos = await px.open_positions()
+    assert len(pos) == 1 and pos[0].qty == 0.0
+    assert pos[0].skill_id == "funding_carry_harvest"
+
+    # Accrue ~20 funding settlements (short receives positive funding) over the hold.
+    for _ in range(20):
+        px.settle_carry_funding("BTC/USDC", 3.0)              # 3 bps each
+    eq1 = await px.equity_usd()
+    assert eq1 > eq0                                           # carry > the maker fees
+
+    fill = await px.close_position("BTC/USDC", reason="max_hold", skill_id="funding_carry_harvest")
+    assert fill is not None
+    assert await px.open_positions() == []                    # pair closed as a unit
+    hist = await px.history()
+    assert any(h.get("pair_type") == "carry" and h["pnl_usd"] > 0 for h in hist)
+
+
+@pytest.mark.asyncio
 async def test_legacy_symbol_keyed_state_migrates(tmp_data_dir: Path):
     """A pre-existing symbol-keyed state file upgrades to the (symbol, skill)
     composite key on load, preserving the position and its attribution."""

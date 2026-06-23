@@ -282,11 +282,17 @@ def funding_carry_harvest(df: pd.DataFrame) -> SkillSignal:
         return _hold(sid, "missing funding_rate")
     fr = float(df["funding_rate"].iloc[-1])
     bps = fr * 1e4
-    # NEVER trades (HOLD): naked execution loses; needs a delta-neutral hedge leg.
+    feats = {"funding_bps": float(bps), "arm_bps": _CARRY_ARM_BPS}
+    if bps < _CARRY_ARM_BPS:
+        return SkillSignal(sid, "HOLD", 0.0, 0.02, 0.04,
+                           f"funding carry {bps:.2f}bps < arm {_CARRY_ARM_BPS}", feats)
+    # Armed: emit BUY. SAFE — the paper exchange routes this skill_id STRUCTURALLY to
+    # the delta-neutral two-leg path (short perp + long spot), never a naked order.
+    conf = min(1.0, bps / 10.0)
     return SkillSignal(
-        sid, "HOLD", 0.0, 0.02, 0.04,
-        f"funding carry level {bps:.2f}bps (arm>={_CARRY_ARM_BPS}); delta-neutral only",
-        {"funding_bps": float(bps), "arm_bps": _CARRY_ARM_BPS},
+        sid, "BUY", conf, 0.05, 0.10,
+        f"funding carry {bps:.2f}bps >= arm {_CARRY_ARM_BPS} -> delta-neutral pair",
+        feats,
     )
 
 
