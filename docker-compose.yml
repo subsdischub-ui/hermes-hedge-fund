@@ -1,49 +1,25 @@
 # Dokploy reads this file at the repo root. Configure these env vars in the
 # Dokploy UI (Environment tab):
 #   HERMES_DOMAIN_API           (e.g. api.hermes.example.com)
-#   TS_AUTHKEY                  (ephemeral, tagged tailscale auth key)
-#   LLM_PRIMARY_BASE_URL=http://<mac-tailnet-ip>:8080/v1   (llama.cpp llama-server)
+#   DEEPSEEK_API_KEY            (primary brain — DeepSeek V4, OpenAI-compatible)
+#   LLM_PRIMARY_BASE_URL / _MODEL / _API_KEY   (the FALLBACK cloud LLM, e.g.
+#                               OpenRouter or Groq — used only if DeepSeek is down)
 #   ...rest of .env.example
 #
 # The 'dokploy-network' must be created externally (Dokploy creates it).
+# Single self-contained agent (+ redis): no Tailscale sidecar, no Mac dependency.
 
 services:
 
-  # --------- Tailscale sidecar: joins your Mac's tailnet. -----------------
-  # hermes-agent shares this container's network namespace so the LLM call
-  # to the Mac's llama-server (tailnet IP :8080) is reachable over Tailscale.
-  hermes-ts:
-    image: tailscale/tailscale:latest
-    hostname: ${TS_HOSTNAME:-hermes-agent}
-    environment:
-      TS_AUTHKEY: ${TS_AUTHKEY}
-      TS_EXTRA_ARGS: --advertise-tags=tag:hermes
-      TS_STATE_DIR: /var/lib/tailscale
-      # Kernel networking (NOT userspace): creates a real tailscale0 interface in
-      # this namespace so hermes-agent (network_mode: service:hermes-ts) can ROUTE
-      # to tailnet IPs (the Mac LLM at :8080). Requires /dev/net/tun + NET_ADMIN
-      # (provided below). Without this the image defaults to userspace mode and
-      # the agent gets ConnectTimeout on every LLM call.
-      TS_USERSPACE: "false"
-    volumes:
-      - hermes-ts-state:/var/lib/tailscale
-      - /dev/net/tun:/dev/net/tun
-    cap_add: [NET_ADMIN, NET_RAW]
-    restart: unless-stopped
-    networks: [dokploy-network]
-    # Traefik labels live on THIS sidecar (not hermes-agent): hermes-agent uses
-    # network_mode: service:hermes-ts, so it has no own IP on dokploy-network.
-    # uvicorn (hermes-agent) listens on :8000 inside this shared namespace, so
-    # Traefik must resolve the backend via hermes-ts's IP.
-    labels:
-      - traefik.enable=true
-      - traefik.docker.network=dokploy-network
-      - traefik.http.routers.hermes-api.rule=Host(`${HERMES_DOMAIN_API}`)
-      - traefik.http.routers.hermes-api.entrypoints=websecure
-      - traefik.http.routers.hermes-api.tls.certresolver=letsencrypt
-      - traefik.http.services.hermes-api.loadbalancer.server.port=8000
-
-  # --------- Hermès agent (main service) ----------------------------------
+  # --------- Hermès agent (main service) — single self-contained container -
+  # Runs on its own dokploy-network IP and is the Traefik ingress itself. Reaches
+  # everything over the internet: Binance (market data + paper/exec), DeepSeek
+  # (primary brain), and an independent OpenAI-compatible cloud LLM as fallback.
+  # NO Tailscale sidecar, NO Mac dependency — so a host reboot can no longer wedge
+  # it. The old inter-container netns coupling (network_mode: service:hermes-ts)
+  # was the root cause of the 2026-06-25 outage: Docker restarted the agent before
+  # the sidecar was up → "cannot join network of a non running container" → stayed
+  # down. depends_on is redis only.
   hermes-agent:
     image: ghcr.io/${GITHUB_REPOSITORY:-you/hermes}/hermes-agent:${TAG:-latest}
     build:
@@ -51,10 +27,8 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     depends_on:
-      hermes-ts:    { condition: service_started }
       hermes-redis: { condition: service_healthy }
-    # Share the Tailscale sidecar's network so hermes-mac resolves via MagicDNS.
-    network_mode: "service:hermes-ts"
+    networks: [dokploy-network]
     env_file: .env
     environment:
       HERMES_DATA_DIR: /data
@@ -68,6 +42,15 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+    # Traefik ingress moved HERE (the agent now has its own IP on dokploy-network;
+    # it used to live on the sidecar only because the agent shared its netns).
+    labels:
+      - traefik.enable=true
+      - traefik.docker.network=dokploy-network
+      - traefik.http.routers.hermes-api.rule=Host(`${HERMES_DOMAIN_API}`)
+      - traefik.http.routers.hermes-api.entrypoints=websecure
+      - traefik.http.routers.hermes-api.tls.certresolver=letsencrypt
+      - traefik.http.services.hermes-api.loadbalancer.server.port=8000
 
   hermes-redis:
     image: redis:7-alpine
@@ -84,7 +67,6 @@ services:
 
 volumes:
   hermes-data:
-  hermes-ts-state:
   hermes-redis-data:
 
 networks:

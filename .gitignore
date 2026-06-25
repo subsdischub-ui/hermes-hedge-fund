@@ -25,3 +25,8 @@ build/
 *.db-wal
 .DS_Store
 Thumbs.db
+
+# Lab research scratch (harnesses + their fetched market data, ~63 MB). These are
+# local, reproducible research artifacts — their FINDINGS live in docs/ + memory,
+# not in the repo. Keep them out of git to avoid bloating the deploy image.
+/research_*/

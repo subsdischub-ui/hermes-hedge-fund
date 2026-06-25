@@ -47,8 +47,10 @@ class Settings(BaseSettings):
     llm_escalation_base_url: str = Field("", alias="LLM_ESCALATION_BASE_URL")
     llm_escalation_model: str = Field("", alias="LLM_ESCALATION_MODEL")
     llm_escalation_api_key: SecretStr = Field(SecretStr(""), alias="LLM_ESCALATION_API_KEY")
-    # When set, the router uses DeepSeek (V4 Pro primary / Flash secondary) and
-    # keeps the local llama.cpp targets above as automatic fallback. 24/7 off-Mac.
+    # DeepSeek (V4) is the settled primary brain; the LLM_PRIMARY/SECONDARY targets
+    # above become the automatic FALLBACK (used only if DeepSeek is unreachable),
+    # pointed in prod at OpenRouter serving inclusionai/ring-2.6-1t — reached direct
+    # over the internet, no Tailscale, no Mac dependency. 24/7 off-Mac.
     deepseek_api_key: SecretStr = Field(SecretStr(""), alias="DEEPSEEK_API_KEY")
 
     # TRM
