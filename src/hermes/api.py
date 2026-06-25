@@ -28,7 +28,7 @@ log = get_logger(__name__)
 # Hermès' identity + rules for the operator-chat. He explains and advises about the
 # business; he can NEVER trade, move funds, or change config via the conversation.
 _CHAT_SYSTEM = """Tu es Hermès, l'agent de trading crypto autonome de cette entreprise \
-(fonds spéculatif personnel, micro-capital, Hyperliquid perps, paper-first). Tu parles \
+(fonds spéculatif personnel, micro-capital, perps Binance USDT-M, paper-first). Tu parles \
 avec l'opérateur-fondateur, en français, avec une honnêteté absolue et de la concision \
 — pas de jargon gratuit, pas de promesses, pas de spin.
 
@@ -347,7 +347,7 @@ async def chat(req: ChatRequest) -> dict[str, Any]:
     messages.append({"role": "user", "content": req.message[:4000]})
     try:
         out = await get_router().chat(
-            agent_role="chat", messages=messages, temperature=0.4, max_tokens=900
+            agent_role="chat", messages=messages, temperature=0.4, max_tokens=4096
         )
     except Exception as e:
         log.warning("chat_llm_failed", error=str(e))
@@ -432,6 +432,8 @@ _DASHBOARD_HTML = """<!doctype html>
 <div class="wrap">
   <div class="card" style="grid-column:1/-1;border-color:#3a4a6a">
     <h2>Live — what each strategy sees right now</h2><div id="live"></div></div>
+  <div class="card" style="grid-column:1/-1;border-color:#4a3a6a">
+    <h2>🔬 Shadow sleeves — research, log-only (never traded)</h2><div id="shadow"></div></div>
   <div class="card"><h2>Equity (paper)</h2><div class="big" id="equity">…</div>
     <div class="sub" id="bankroll"></div></div>
   <div class="card"><h2>Stage gate</h2><div id="gatesum" class="sub"></div><div id="gates"></div></div>
@@ -501,12 +503,33 @@ function renderLive(d){
       +tag+`</div>`
       +`<div class="bar"><i style="width:${pct}%;background:${col}"></i></div></div>`; };
   el.innerHTML=head+`<div style="display:flex;gap:16px;flex-wrap:wrap">`
-    +syms.map(sym=>{ const a=bySym[sym]; const gs=a.gauges||[];
+    +syms.map(sym=>{ const a=bySym[sym]; const gs=(a.gauges||[]).filter(g=>!g.shadow);
       return `<div style="flex:1;min-width:240px;border:1px solid #2a3346;border-radius:8px;padding:10px 12px">`
         +`<div style="font-weight:600;color:#fff">${esc(sym)} `
         +`<span class="muted" style="font-weight:400;font-size:12px">${esc(a.regime||'')} · ER ${f(a.efficiency_ratio,3)}</span></div>`
         +(gs.length?gs.map(gbar).join(''):'<div class="muted" style="margin-top:6px">no gauges (skill not reporting)</div>')
         +`<div class="sub" style="margin-top:6px">decision: <b>${esc(a.would_act||'HOLD')}</b> · ${ago(a.ts)}</div>`
+        +`</div>`; }).join('')+`</div>`;
+}
+function renderShadow(d){
+  const el=document.getElementById('shadow'); if(!el) return;
+  const acts=(d.activity||[]).filter(a=>a.kind==='pulse').slice()
+    .sort((x,y)=>new Date(y.ts)-new Date(x.ts));
+  const bySym={}; for(const a of acts){ if(!bySym[a.symbol]) bySym[a.symbol]=a; }
+  const syms=(d.universe||[]).filter(s=>bySym[s] && (bySym[s].gauges||[]).some(g=>g.shadow));
+  const head=`<div class="sub" style="margin-bottom:10px">Confirmed slow-orthogonal edges on <b>new data</b> (options-implied vol · on-chain stablecoin supply). Computed every pulse but <b>never routed to execution</b> — kept out of the live slate, here only to accrue out-of-sample evidence before any promotion. BTC/ETH only.</div>`;
+  if(!syms.length){ el.innerHTML=head+'<div class="muted">no shadow gauge logged yet — waiting for the next pulse</div>'; return; }
+  const sbar=g=>{ const pct=Math.max(4,Math.min(100,100*(Math.abs(Number(g.val))/(g.thr||1))));
+    const tag=g.armed?`<span class="pill" style="color:#cba6f7;border-color:#4a3a6a">would ${esc(g.side||'fire')}</span>`
+      :'<span class="pill off">watching</span>';
+    return `<div style="margin:6px 0"><div class="sub">${esc(g.sleeve)} — ${esc(g.metric)} <b>${f(g.val,2)}</b> / ±${f(g.thr,2)} `
+      +tag+`</div><div class="bar"><i style="width:${pct}%;background:#cba6f7"></i></div></div>`; };
+  el.innerHTML=head+`<div style="display:flex;gap:16px;flex-wrap:wrap">`
+    +syms.map(sym=>{ const a=bySym[sym]; const gs=(a.gauges||[]).filter(g=>g.shadow);
+      return `<div style="flex:1;min-width:240px;border:1px solid #4a3a6a;border-radius:8px;padding:10px 12px">`
+        +`<div style="font-weight:600;color:#fff">${esc(sym)} <span class="pill off">shadow</span></div>`
+        +gs.map(sbar).join('')
+        +`<div class="sub" style="margin-top:6px">log-only · never trades · ${ago(a.ts)}</div>`
         +`</div>`; }).join('')+`</div>`;
 }
 function renderAB(st){
@@ -547,6 +570,7 @@ function render(){
     `<div>Confidence calibrator <span class="pill ${m.calibrator_fitted?'ok':'off'}">${m.calibrator_fitted?'active':'shadow'}</span></div>`
     +`<div style="margin-top:6px">Meta-labeler <span class="pill ${m.meta_labeler_fitted?'ok':'off'}">${m.meta_labeler_fitted?'active':'shadow'}</span></div>`;
   renderLive(d);
+  renderShadow(d);
   renderEq(d.equity_curve);
   renderAB(d.strategies||{});
   const ps=d.open_positions||[];
@@ -614,40 +638,32 @@ _CHAT_HTML = """<!doctype html>
   #msg{flex:1;resize:none}
   button{background:#89b4fa;color:#0b0e14;border:0;border-radius:8px;padding:0 16px;font-weight:600;cursor:pointer}
   button:disabled{opacity:.5;cursor:default}
-  #keyrow{padding:10px 18px;border-bottom:1px solid #1d2230;display:flex;gap:8px;align-items:center;max-width:820px;width:100%;margin:0 auto;box-sizing:border-box}
 </style></head>
 <body>
 <header><h1>Hermès</h1><span class="sub">parle avec l'agent de notre entreprise</span>
   <a href="/dashboard" style="margin-left:auto">← dashboard</a></header>
-<div id="keyrow">
-  <input id="key" type="password" placeholder="clé API (optionnel — seulement si l'accès est protégé)" style="flex:1"/>
-  <button id="savekey" type="button">enregistrer</button>
-</div>
 <div id="log"></div>
 <form id="f">
   <textarea id="msg" rows="2" placeholder="Demande-lui où en est l'entreprise, pourquoi il ne trade pas, sa stratégie…"></textarea>
   <button id="send" type="submit">envoyer</button>
 </form>
 <script>
-const log=document.getElementById('log'), keyEl=document.getElementById('key');
-keyEl.value=localStorage.getItem('hermes_key')||'';
-document.getElementById('savekey').onclick=()=>{localStorage.setItem('hermes_key',keyEl.value.trim());add('bot','Clé enregistrée. Pose ta question.');};
+const log=document.getElementById('log');
 const hist=[];
 const esc=s=>String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 function add(who,text,meta){const d=document.createElement('div');d.className='msg '+(who==='me'?'me':'bot');
   d.innerHTML=esc(text)+(meta?`<div class="meta">${esc(meta)}</div>`:'');log.appendChild(d);log.scrollTop=log.scrollHeight;return d;}
 add('bot',"Salut. Je suis Hermès. Demande-moi où en est notre entreprise, ce que voient les stratégies, ou pourquoi je tiens ma position. (Je discute seulement — je n'exécute aucune action ici.)");
 document.getElementById('f').onsubmit=async e=>{e.preventDefault();
-  const m=document.getElementById('msg').value.trim(); const key=keyEl.value.trim();
+  const m=document.getElementById('msg').value.trim();
   if(!m)return;
   add('me',m); document.getElementById('msg').value=''; const btn=document.getElementById('send'); btn.disabled=true;
   const think=add('bot','…');
   try{
-    const r=await fetch('/chat',{method:'POST',headers:{'content-type':'application/json','x-api-key':key},
+    const r=await fetch('/chat',{method:'POST',headers:{'content-type':'application/json'},
       body:JSON.stringify({message:m,history:hist.slice(-10)})});
     const j=await r.json();
-    if(r.status===401){think.textContent='Accès protégé : saisis ta clé API en haut, enregistre, puis réessaie.';}
-    else if(!r.ok){think.textContent='Erreur: '+(j.detail||r.status);}
+    if(!r.ok){think.textContent='Erreur: '+(j.detail||r.status);}
     else{think.innerHTML=esc(j.reply)+`<div class="meta">${esc(j.model||'')}</div>`;
       hist.push({role:'user',content:m}); hist.push({role:'assistant',content:j.reply});}
   }catch(err){think.textContent='Erreur réseau: '+err;}
