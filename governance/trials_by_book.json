@@ -1,7 +1,7 @@
 {
   "counts": {
     "cross": 5,
-    "crypto": 1891,
+    "crypto": 1892,
     "fx_metals": 53
   },
   "provenance": {
@@ -47,6 +47,10 @@
       {
         "n": 22,
         "source": "S2_xsec_neutral_sleeves_4prereg_plus_18exploratory"
+      },
+      {
+        "n": 1,
+        "source": "forward_xs_funding_reversion_prereg"
       }
     ],
     "fx_metals": [
