@@ -119,6 +119,15 @@ def test_single_instrument_win_is_rejected():
     assert "generalization" in verdict.failed
 
 
+def test_min_oos_sharpe_zero_still_enforces_nonnegative():
+    """A bar with min_oos_sharpe=0.0 must ENFORCE 'oos_sharpe >= 0', not silently disable the gate
+    (the 0.0 footgun): a sleeve with a negative OOS Sharpe cannot pass."""
+    bar = gov.PromotionThresholds(max_pbo=0.5, min_dsr=0.95, min_oos_sharpe=0.0)
+    pb = gov.PromotionBar({gov.Book.CRYPTO: bar})
+    verdict = pb.evaluate(_clean_passing_evidence(oos_sharpe=-5.0))
+    assert "oos_sharpe" in verdict.failed
+
+
 def test_deflated_sharpe_collapses_as_true_trial_count_rises():
     """The core 10.1 mechanism: the SAME track record deflates harder as the true number of
     trials grows — so under-counting trials fraudulently inflates the DSR."""
@@ -202,6 +211,17 @@ def test_ledger_passes_through_a_novel_proposal():
     assert res["verdict"] is gov.LedgerVerdict.NOT_A_DEAD_END
 
 
+def test_ledger_does_not_overblock_on_short_substring_tags():
+    """Bare substring tags like 'd1' / 'cot ' must NOT false-block unrelated proposals that merely
+    contain the bigram (the governance layer's worst failure mode = suppressing legitimate work)."""
+    ledger = gov.DeadEndsLedger.load()
+    assert ledger.check("a btcusd1h scalper concept")["verdict"] is gov.LedgerVerdict.NOT_A_DEAD_END
+    assert ledger.check("an apricot futures basis idea")["verdict"] is gov.LedgerVerdict.NOT_A_DEAD_END
+    # but the genuine D1 feature-zoo proposal is STILL blocked via its specific multi-word tags
+    res = ledger.check("D1 ML feature-zoo combination over 8 features")
+    assert res["verdict"] is gov.LedgerVerdict.BLOCKED
+
+
 def test_ledger_has_the_canonical_falsified_families():
     names = " ".join(e.name.lower() for e in gov.DeadEndsLedger.load().entries())
     for needle in ("gold trend", "cointegration", "maker", "d1"):
@@ -268,6 +288,7 @@ def test_gp_unlocks_only_when_all_conditions_met():
         deflation_trusted=True,
         book_harness_trusted=True,
         validated_orthogonal_feature_count=3,
+        forward_validated_candidate=True,  # Task 4 — OOS-forward precondition now gates GP too
     )
     assert status["locked"] is False
     assert all(c["met"] for c in status["conditions"])
@@ -278,6 +299,180 @@ def test_gp_stays_locked_if_any_condition_unmet():
         deflation_trusted=True,
         book_harness_trusted=True,
         validated_orthogonal_feature_count=2,  # one short of the zoo requirement
+        forward_validated_candidate=True,
     )
     assert status["locked"] is True
     assert any(not c["met"] for c in status["conditions"])
+
+
+def test_gp_locked_when_no_forward_validated_candidate_today():
+    """v-next: even with deflation+harness+zoo trusted, GP stays locked while NO sleeve has
+    cleared the OOS-forward precondition (funding_squeeze unconfirmed, cross-sectional dead)."""
+    status = gov.gp_lock_status(
+        deflation_trusted=True,
+        book_harness_trusted=True,
+        validated_orthogonal_feature_count=3,
+        forward_validated_candidate=False,  # the reality today
+    )
+    assert status["locked"] is True
+    # the lock must surface that there is no candidate sleeve right now
+    assert status["candidate_sleeves_today"] == []
+
+
+# =========================================================================== #
+# v-next Task 1 — SHARED, TRACKED registry location (not gitignored per-worktree)
+# =========================================================================== #
+def test_governance_registry_dir_is_tracked_not_gitignored():
+    """The canonical registry state must live in a COMMITTED dir (root governance/), not the
+    gitignored per-worktree research_streams/S10/ that made the count un-authoritative."""
+    d = gov.governance_registry_dir()
+    assert d.name == "governance"
+    assert "research_streams" not in str(d)
+    assert not d.name.startswith("research_")  # /research_*/ is the gitignore glob
+
+
+def test_book_trial_registry_defaults_to_shared_tracked_dir():
+    reg = gov.BookTrialRegistry()  # no arg → the canonical shared dir, NOT settings.data_dir
+    assert reg.path.parent == gov.governance_registry_dir()
+    assert reg.path.name == "trials_by_book.json"
+
+
+def test_crypto_seed_count_is_1891_after_s2(tmp_path):
+    """Crypto deflation count = 1869 (S0-era) + 22 (S2 v-next: 4 pre-reg + 18 exploratory)."""
+    reg = gov.BookTrialRegistry(tmp_path)
+    reg.seed_defaults()
+    assert reg.count(gov.Book.CRYPTO) == 1891
+    # the FX and cross books are untouched by S2
+    assert reg.count(gov.Book.FX_METALS) == 53
+    assert reg.count(gov.Book.CROSS) == 5
+
+
+def test_committed_canonical_count_is_1891():
+    """The MIGRATED, committed governance/trials_by_book.json pins the canonical crypto count."""
+    reg = gov.BookTrialRegistry()  # reads the committed governance/ JSON
+    assert reg.count(gov.Book.CRYPTO) == 1891
+
+
+def test_governance_snapshots_are_synced_with_embedded_defaults():
+    """The committed governance/*.json snapshots are generated FROM the embedded canonical
+    defaults; a drift between code-as-truth and the shared serialized state is a governance bug."""
+    import json as _json
+
+    d = gov.governance_registry_dir()
+    dead = _json.loads((d / "dead_ends_ledger.json").read_text())
+    amap = _json.loads((d / "acquisition_map.json").read_text())
+    assert {e["name"] for e in dead} == {e.name for e in gov.DEFAULT_DEAD_ENDS}
+    assert {s["source"] for s in amap} == {s.source for s in gov.DEFAULT_ACQUISITION_MAP}
+    # the 4 S2 negatives must be present in the committed snapshot
+    s2_names = {e["name"] for e in dead if "Stream 2 v-next" in e["date"]}
+    assert len(s2_names) == 4
+
+
+# =========================================================================== #
+# v-next Task 3 — registry updates: the 4 S2 negatives + acquisition correction
+# =========================================================================== #
+def test_ledger_blocks_the_four_s2_negatives():
+    """The 4 S2 v-next cross-sectional negatives enter the ledger so no team re-spends them."""
+    ledger = gov.DeadEndsLedger.load()
+    for proposal in (
+        "cross-sectional funding continuation sleeve",  # 2A — wrong-way (XS funding mean-reverts)
+        "volatility dispersion cross-sectional sleeve",  # 2D — no edge, cost-eaten
+        "open-interest growth cross-sectional sleeve",  # 2B — data-gated / under-powered, 7 coins
+        "cross-venue funding dispersion sleeve",  # 2.3 — no edge, 5 coins, Sharpe -0.44
+    ):
+        assert ledger.check(proposal)["verdict"] is gov.LedgerVerdict.BLOCKED, proposal
+
+
+def test_2a_funding_xs_records_wrong_way_mechanism():
+    """2A's kill reason must name the wrong-way sign (XS funding mean-reverts) AND the cost."""
+    ledger = gov.DeadEndsLedger.load()
+    res = ledger.check("cross-sectional funding continuation sleeve")
+    blob = (res["why_dead"] + res.get("kill_metric", "")).lower()
+    assert "mean-revert" in blob or "wrong-way" in blob or "wrong way" in blob
+    assert "16.85" in blob or "cost" in blob
+
+
+def test_acquisition_coinglass_notes_multi_venue_depth():
+    """CoinGlass must now be described as DEEP multi-venue (OKX/Bybit→2020, Bitget→2021),
+    correcting the stale 'Binance-only' framing that gated S2.3/S9."""
+    amap = gov.AcquisitionMap.load()
+    reason = amap.can_spend("CoinGlass")["reason"].lower()
+    assert "multi-venue" in reason or "multi venue" in reason
+    assert "okx" in reason or "bybit" in reason or "bitget" in reason
+
+
+# =========================================================================== #
+# v-next Task 3 — funding_squeeze status DOWNGRADE
+# =========================================================================== #
+def test_funding_squeeze_is_downgraded_not_confirmed():
+    """Status moves from 'validated survivor' to 'WEAKLY SUPPORTED, not robustly confirmed':
+    deflation re-gates REJECT at the true count AND S2 4h cluster-aware finds it NS."""
+    st = gov.funding_squeeze_status()
+    assert st["confirmed"] is False
+    assert st["status"] == "WEAKLY_SUPPORTED"
+    # the convergent evidence must be carried (bull macro-event t=1.50 NS; per-trade Sharpe weak)
+    blob = str(st).lower()
+    assert "1.50" in blob or "1.5" in blob
+    assert "0.16" in blob or "0.24" in blob  # per-trade Sharpe real-but-weak band
+
+
+# =========================================================================== #
+# v-next Task 4 — OOS-FORWARD as a HARD precondition of promotion
+# =========================================================================== #
+def test_in_sample_pass_but_no_forward_is_rejected():
+    """A sleeve may pass the full in-sample gate yet NOT be promotable without clean accumulated
+    OOS-forward (the Forward-Shadow exit). S0 survivorship + S2 single-frozen-lake establish that
+    no in-sample result, however clean, can CONFIRM an edge."""
+    ev = _clean_passing_evidence()
+    assert gov.PromotionBar().evaluate(ev).verdict is gov.Verdict.PROMOTE  # in-sample screen passes
+    v = gov.PromotionBar().evaluate_with_forward(ev, None)  # but no forward evidence
+    assert v.verdict is gov.Verdict.REJECT
+    assert "oos_forward_present" in v.failed
+
+
+def test_clean_in_sample_plus_clean_forward_promotes():
+    ev = _clean_passing_evidence()
+    fwd = gov.ForwardOOSEvidence(
+        forward_sharpe=0.30, n_trades=40, window_days=180, regime_real=True, leak_replayed=True
+    )
+    v = gov.PromotionBar().evaluate_with_forward(ev, fwd)
+    assert v.verdict is gov.Verdict.PROMOTE
+
+
+def test_forward_must_be_real_regime_and_leak_replayed():
+    ev = _clean_passing_evidence()
+    not_real = gov.ForwardOOSEvidence(
+        forward_sharpe=0.30, n_trades=40, window_days=180, regime_real=False, leak_replayed=True
+    )
+    v1 = gov.PromotionBar().evaluate_with_forward(ev, not_real)
+    assert v1.verdict is gov.Verdict.REJECT
+    assert "oos_forward_regime_real" in v1.failed
+
+    no_replay = gov.ForwardOOSEvidence(
+        forward_sharpe=0.30, n_trades=40, window_days=180, regime_real=True, leak_replayed=False
+    )
+    v2 = gov.PromotionBar().evaluate_with_forward(ev, no_replay)
+    assert v2.verdict is gov.Verdict.REJECT
+    assert "oos_forward_leak_replayed" in v2.failed
+
+
+def test_forward_must_have_enough_trades_and_window():
+    ev = _clean_passing_evidence()
+    thin = gov.ForwardOOSEvidence(
+        forward_sharpe=0.30, n_trades=3, window_days=10, regime_real=True, leak_replayed=True
+    )
+    v = gov.PromotionBar().evaluate_with_forward(ev, thin)
+    assert v.verdict is gov.Verdict.REJECT
+    assert "oos_forward_trades" in v.failed or "oos_forward_window" in v.failed
+
+
+def test_forward_does_not_rescue_a_failing_in_sample_sleeve():
+    """The forward precondition is ADDITIVE, never a bypass: a sleeve that fails the in-sample
+    deflation bar is rejected even with a pristine forward record."""
+    ev = _clean_passing_evidence(book=gov.Book.FX_METALS, dsr=0.50)  # below FX bar 0.975
+    fwd = gov.ForwardOOSEvidence(
+        forward_sharpe=0.9, n_trades=200, window_days=365, regime_real=True, leak_replayed=True
+    )
+    v = gov.PromotionBar().evaluate_with_forward(ev, fwd)
+    assert v.verdict is gov.Verdict.REJECT
+    assert "deflated_sharpe" in v.failed

@@ -37,6 +37,7 @@ self-contained) and can be overridden from JSON artifacts under ``research_strea
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
@@ -51,6 +52,7 @@ __all__ = [
     "DEFAULT_ACQUISITION_MAP",
     "DEFAULT_DEAD_ENDS",
     "DEFAULT_TRIAL_SEED",
+    "FUNDING_SQUEEZE_STATUS",
     "FX_BAR",
     "AcquisitionMap",
     "Book",
@@ -59,6 +61,7 @@ __all__ = [
     "DataStatus",
     "DeadEnd",
     "DeadEndsLedger",
+    "ForwardOOSEvidence",
     "LedgerVerdict",
     "PromotionBar",
     "PromotionThresholds",
@@ -67,8 +70,33 @@ __all__ = [
     "Verdict",
     "bar_for_book",
     "deflated_sharpe_at_true_count",
+    "funding_squeeze_status",
+    "governance_registry_dir",
     "gp_lock_status",
 ]
+
+
+# --------------------------------------------------------------------------- #
+# v-next Task 1 — the SHARED, TRACKED registry location
+# --------------------------------------------------------------------------- #
+# The Round-1 registries were persisted under research_streams/S10/ — but that path is
+# gitignored (`/research_*/`), so each worktree carried its OWN copy of the deflation count
+# and the ledger. A per-worktree gitignored count cannot be the lab's authoritative state.
+#
+# The canonical state therefore lives in a COMMITTED, repo-root ``governance/`` directory
+# (tracked → shared identically across every worktree via git). Every future trial bump goes
+# through ``BookTrialRegistry()`` (no-arg → this dir) and is committed. Override with
+# ``HERMES_GOVERNANCE_DIR`` for tests / alternative checkouts.
+def governance_registry_dir() -> Path:
+    """Repo-root ``governance/`` — the canonical, committed home of the registry state.
+
+    Replaces the gitignored, per-worktree ``research_streams/S10/`` so the deflation count,
+    the dead-ends ledger and the acquisition map are one shared, version-controlled truth.
+    """
+    env = os.environ.get("HERMES_GOVERNANCE_DIR")
+    if env:
+        return Path(env)
+    return Path(__file__).resolve().parents[3] / "governance"
 
 
 # --------------------------------------------------------------------------- #
@@ -112,12 +140,20 @@ class PromotionThresholds:
 
     max_pbo: float
     min_dsr: float
-    min_oos_sharpe: float = 0.3        # gate §3.5 (OOS Sharpe on last 40% by date)
+    min_oos_sharpe: float = 0.3        # gate §3.5 (OOS Sharpe on last 40% by date, IN-SAMPLE split)
     max_abs_rho: float = 0.3           # gate §3.8 (|ρ| vs every existing sleeve)
     min_instruments: int = 2           # gate §3.5 cross-asset generalization (the killer filter)
     max_mc_null_p: float = 0.05        # gate §3.6 random-entry null — the FLOOR, not the bar
     require_beta_controlled: bool = True
     require_positive_loo: bool = True  # §7 — the unit is the BOOK (LOO-Δ-Sharpe), not solo
+    # v-next Task 4 — the OOS-FORWARD precondition. The in-sample split above (last 40% by date)
+    # is necessary but NOT sufficient: S0 survivorship (the losing tail of a long-only continuation
+    # is absent by construction) and S2's single frozen lake establish that no in-sample result,
+    # however clean, can CONFIRM an edge. Promotion requires clean forward OOS accrued in real regime.
+    require_oos_forward: bool = True
+    min_forward_trades: int = 20            # enough real-regime trades to be more than noise
+    min_forward_window_days: int = 90        # accrued over a genuine forward window (Forward-Shadow)
+    min_forward_sharpe: float = 0.0          # forward per-trade Sharpe must not be negative
 
 
 # Policy (head-of-research, Stream 10.1). The floor is shared; the deflation layer is
@@ -157,6 +193,24 @@ class SleeveEvidence:
     oos_sharpe: float = 0.0   # §3.5 OOS Sharpe on the last 40% by calendar date
     n_trials: int = 0         # the true trial count the dsr was deflated by (provenance)
     notes: str = ""
+
+
+@dataclass(frozen=True)
+class ForwardOOSEvidence:
+    """Clean out-of-sample FORWARD evidence accrued in a real trading regime (the exit of
+    Forward-Shadow), the hard precondition the in-sample gate cannot substitute for.
+
+    ``regime_real`` asserts the forward window was a genuine live/paper regime (not a re-sliced
+    in-sample tail). ``leak_replayed`` asserts the driver's leak-injection audit (AM-4) was
+    RE-RUN on this survivor at merge — composition bugs fabricate positives, so a prior clean
+    audit is not enough; it must be replayed on the exact merged artifact.
+    """
+
+    forward_sharpe: float       # per-trade Sharpe over the forward window (never annualized)
+    n_trades: int               # number of real-regime forward trades
+    window_days: int            # calendar span of the forward window
+    regime_real: bool           # genuine forward regime, NOT a re-sliced in-sample tail
+    leak_replayed: bool         # the AM-4 leak-injection audit was RE-RUN on this survivor at merge
 
 
 @dataclass
@@ -252,7 +306,7 @@ class PromotionBar:
                 f"LOO-Δ-Sharpe={evidence.loo_delta_sharpe:.4g} "
                 "(need > 0 — the BOOK must be better WITH the sleeve; solo Sharpe is irrelevant)",
             )
-        if bar.min_oos_sharpe > 0:
+        if bar.min_oos_sharpe >= 0:  # 0.0 means "must be non-negative", NOT "skip the gate"
             record(
                 "oos_sharpe",
                 evidence.oos_sharpe >= bar.min_oos_sharpe,
@@ -276,6 +330,80 @@ class PromotionBar:
                 "min_oos_sharpe": bar.min_oos_sharpe,
             },
         )
+
+    def evaluate_with_forward(
+        self, evidence: SleeveEvidence, forward: ForwardOOSEvidence | None
+    ) -> PromotionVerdict:
+        """The FULL v-next promotion decision: the in-sample gate AND the OOS-forward precondition.
+
+        This is what an actual promotion must call (``evaluate`` alone is only the in-sample
+        screen). The forward precondition is strictly ADDITIVE — it can never rescue a sleeve that
+        fails the in-sample deflation bar, and a sleeve that passes in-sample is still REJECTED
+        until clean OOS-forward evidence has accrued in a real regime (Forward-Shadow exit) with
+        the AM-4 leak audit replayed on the merged survivor.
+        """
+        verdict = self.evaluate(evidence)  # in-sample screen first (re-uses every gate above)
+        bar = self._bars.get(evidence.book, FX_BAR)
+        if not bar.require_oos_forward:
+            return verdict
+
+        def record(key: str, ok: bool, reason: str) -> None:
+            (verdict.passed if ok else verdict.failed).append(key)
+            verdict.reasons[key] = reason
+
+        if forward is None:
+            record(
+                "oos_forward_present",
+                False,
+                "no clean OOS-forward accrued — the Forward-Shadow has not been exited. No in-sample "
+                "result, however clean, can CONFIRM an edge (S0 survivorship; S2 single frozen lake).",
+            )
+        else:
+            record(
+                "oos_forward_present", True,
+                f"forward evidence attached ({forward.n_trades} trades / {forward.window_days}d)",
+            )
+            record(
+                "oos_forward_regime_real",
+                forward.regime_real,
+                "forward window is a genuine live/paper regime"
+                if forward.regime_real
+                else "forward window is NOT a real regime (a re-sliced in-sample tail does not count)",
+            )
+            record(
+                "oos_forward_leak_replayed",
+                forward.leak_replayed,
+                "AM-4 leak-injection audit RE-RUN on this survivor at merge"
+                if forward.leak_replayed
+                else "AM-4 leak audit NOT replayed on the merged survivor — composition bugs "
+                "fabricate positives, so the prior clean audit is insufficient",
+            )
+            record(
+                "oos_forward_trades",
+                forward.n_trades >= bar.min_forward_trades,
+                f"forward trades={forward.n_trades} (need ≥ {bar.min_forward_trades})",
+            )
+            record(
+                "oos_forward_window",
+                forward.window_days >= bar.min_forward_window_days,
+                f"forward window={forward.window_days}d (need ≥ {bar.min_forward_window_days}d)",
+            )
+            record(
+                "oos_forward_sharpe",
+                forward.forward_sharpe >= bar.min_forward_sharpe,
+                f"forward Sharpe={forward.forward_sharpe:.4g} (need ≥ {bar.min_forward_sharpe})",
+            )
+
+        verdict.verdict = Verdict.PROMOTE if not verdict.failed else Verdict.REJECT
+        verdict.thresholds.update(
+            {
+                "require_oos_forward": bar.require_oos_forward,
+                "min_forward_trades": bar.min_forward_trades,
+                "min_forward_window_days": bar.min_forward_window_days,
+                "min_forward_sharpe": bar.min_forward_sharpe,
+            }
+        )
+        return verdict
 
 
 def deflated_sharpe_at_true_count(
@@ -306,6 +434,10 @@ DEFAULT_TRIAL_SEED: dict[Book, list[tuple[str, int]]] = {
         ("dvol_reversion_config_grid", 96),                 # 7/96 configs beat the null
         ("stablecoin_growth_config_grid", 96),
         ("positioning_flow_hunts_H1_H5", 5),
+        # S2 v-next (market-neutral cross-sectional sleeves): 4 pre-registered (2A/2B/2D/2.3) +
+        # 18 exploratory = 22. [VÉRIFIÉ S2/TRIAL_REGISTRY.md]. NB: 1869→1891 is THIS module's
+        # arithmetic; S2 itself leaves the sum uncomputed ("1869 + 4 + 18").
+        ("S2_xsec_neutral_sleeves_4prereg_plus_18exploratory", 22),
     ],
     Book.FX_METALS: [
         ("B_frontier_hunts_B1_B2_B3_B5", 24),  # the n_trials used in _book_report.json
@@ -334,12 +466,17 @@ class BookTrialRegistry:
     _FILENAME = "trials_by_book.json"
 
     def __init__(self, data_dir: Path | str | None = None) -> None:
+        # v-next: the no-arg default is now the COMMITTED, shared governance dir (not the
+        # per-worktree settings.data_dir), so the deflation count is one authoritative truth.
         if data_dir is None:
-            from hermes.settings import get_settings
-
-            data_dir = get_settings().data_dir
+            data_dir = governance_registry_dir()
         self._dir = Path(data_dir)
         self._path = self._dir / self._FILENAME
+
+    @property
+    def path(self) -> Path:
+        """The JSON file backing this registry (``<dir>/trials_by_book.json``)."""
+        return self._path
 
     # -- persistence ---------------------------------------------------------------- #
     def _load(self) -> dict:
@@ -443,7 +580,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "best MC-p 0.011 (silver only); 0/6 generalize; pooled Sharpe 0.014",
         "A disaggregated/managed-money positioning panel with a true point-in-time vintage "
         "archive, or an intraday positioning proxy.",
-        tags=("cot positioning", "cot contrarian", "cot extreme", "commitment of traders", "cot "),
+        tags=("cot positioning", "cot contrarian", "cot extreme", "commitment of traders", "cot net"),
     ),
     DeadEnd(
         "B2 real-rate (DFII10) shock → gold", "fx_metals", "2026-06-24 (Loop 3)",
@@ -555,7 +692,8 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "A genuinely NEW orthogonal feature carrying directional info absent from the 8-feature zoo "
         "(intraday CME order-flow, OTC skew, COMEX inventory, a real (actual,forecast) panel). "
         "Re-running ML over the same exhausted features is forbidden.",
-        tags=("d1", "feature zoo", "ml combination", "feature-zoo", "gbm logit gold", "ml feature zoo"),
+        tags=("feature zoo", "ml combination", "feature-zoo", "gbm logit gold", "ml feature zoo",
+              "d1 feature zoo"),
     ),
     DeadEnd(
         "Combined FX book-of-4 under MC-null-first hierarchy", "fx_metals", "2026-06-24 (Loop 3)",
@@ -756,6 +894,55 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         tags=("regime conditioning funding", "hmm conditioning", "bocpd conditioning", "regime gate funding",
               "regime-aware cpcv"),
     ),
+    # ---- S2 v-next: market-neutral cross-sectional sleeve family (all NEGATIVE) ------- #
+    # [VÉRIFIÉ vs ../hermes-s2-xsec/research_streams/S2/FINDINGS.md + results_s2_xsec.json]
+    DeadEnd(
+        "S2.2A funding cross-sectional continuation (XS)", "crypto", "2026 (Stream 2 v-next)",
+        "Daily cross-sectional funding-z reshuffle, LONG high-funding / SHORT low-funding (continuation), "
+        "tercile two-leg market-neutral.",
+        "WRONG-WAY SIGN — cross-sectional funding MEAN-REVERTS, it does not continue (gross-only ann Sharpe "
+        "-1.38). Even with the sign flipped it is COST-KILLED: the two-leg honest cost is -16.85 bps/day "
+        "because a daily funding-z reshuffle turns over ~100%/day. gross(price) -8.7 · carry -1.45 · cost "
+        "-16.85 bps. MC random-sign p=1.0 (sign wrong-way).",
+        "gross_ann_sharpe -1.38 (wrong-way); cost -16.85 bps/day; ~100%/day rotation; MC-sign p=1.0",
+        "A funding signal whose forward sign is STABLE (not mean-reverting) and that survives the ~100%/day "
+        "two-leg cost — e.g. a slow, low-turnover funding state, NOT a daily XS reshuffle.",
+        tags=("cross-sectional funding", "funding cross-sectional", "funding-xs", "xs funding",
+              "funding cross sectional", "cross sectional funding"),
+    ),
+    DeadEnd(
+        "S2.2D volatility-dispersion cross-sectional (XS)", "crypto", "2026 (Stream 2 v-next)",
+        "Cross-sectional realized-vol dispersion sleeve (long low-vol / short high-vol style), market-neutral.",
+        "NO EDGE: a faint positive whiff in the price spread (gross ann Sharpe +0.20) but it is NOT "
+        "significant (MC random-sign p=0.311) and is eaten by cost (net -1.84 bps). Clean no-edge.",
+        "gross ann Sharpe +0.20 (NS, MC-sign p=0.311); net -1.84 bps (cost-eaten)",
+        "A vol-dispersion signal with a significant gross edge (MC-sign p<0.05) large enough to survive cost — "
+        "the faint +0.20 whiff is not it.",
+        tags=("vol dispersion", "volatility dispersion", "vol-dispersion", "dispersion cross-sectional",
+              "vol dispersion xs"),
+    ),
+    DeadEnd(
+        "S2.2B open-interest-growth cross-sectional (XS)", "crypto", "2026 (Stream 2 v-next)",
+        "Cross-sectional open-interest growth sleeve over the only 7 CoinGlass-OI coins "
+        "(ARB, AVAX, BTC, ETH, SOL, SUI, WIF), 1d.",
+        "DATA-GATED / UNDER-POWERED, not a clean refutation: only 7 names (often 4-5 available), and the 7 are "
+        "current SURVIVORS (survivorship). gross ann Sharpe +0.13 (NS), cost -26 bps/day.",
+        "7 coins (survivorship); gross +0.13 NS; cost -26 bps/day; under-powered",
+        "A deep OI panel over a wider, point-in-time (non-survivorship) universe with enough names for a "
+        "powered cross-sectional test.",
+        tags=("oi growth", "oi-growth", "open-interest growth", "open interest growth", "oi growth xs"),
+    ),
+    DeadEnd(
+        "S2.3 cross-venue funding dispersion", "crypto", "2026 (Stream 2 v-next)",
+        "Cross-venue funding dispersion sleeve, 5 coins × 4 venues (Binance/OKX/Bybit/Bitget), 1d.",
+        "NO EDGE: ann Sharpe -0.44 (negative → wrong-sign), MC random-sign p=0.05, thin 5-coin universe. The "
+        "multi-venue lake (S0) UNBLOCKED the data but the dispersion itself carries no tradeable edge.",
+        "ann Sharpe -0.44 (wrong-sign); MC-sign p=0.05; thin 5-coin universe",
+        "A cross-venue crowding signal with a stable forward sign on a wider venue×coin panel — the 5-coin "
+        "dispersion is exhausted (data now exists; the edge does not).",
+        tags=("cross-venue funding", "cross-venue dispersion", "cross venue dispersion", "cross venue funding",
+              "cross-venue funding dispersion"),
+    ),
 ]
 
 
@@ -869,10 +1056,13 @@ DEFAULT_ACQUISITION_MAP: list[DataSource] = [
     DataSource(
         "CoinGlass", DataStatus.ACQUIRED, "paid plan / COINGLASS_API_KEY (~30 req/min)",
         "deep crypto positioning history (top/global LSR, taker volume, OI OHLC, funding, "
-        "liquidations; top-LSR BTC back to 2020-05-16)",
-        "Stream 0 lake; Stream 2/3 (positioning) FULLY UNBLOCKED",
-        "Frozen into the point-in-time lake. The single most theory-aligned crypto lead "
-        "(top_lsr contrarian) is now gateable end-to-end.",
+        "liquidations; top-LSR BTC back to 2020-05-16). DEEP MULTI-VENUE funding/OI ingested: "
+        "Binance 2020-03-30 · OKX/Bybit 2020-10-30 · Bitget 2021-08-12 (OI deeper still: "
+        "OKX 2020-04-17, Bybit 2020-05-08) — coinglass_multi_{funding_rate,open_interest}",
+        "Stream 0 lake; Stream 2/3 (positioning) FULLY UNBLOCKED; Stream 2.3/9 cross-venue UNBLOCKED",
+        "Frozen into the point-in-time lake. CORRECTION (S0 re-freeze): the lake is NO LONGER "
+        "'Binance-only' — multi-venue (OKX/Bybit→2020, Bitget→2021) funding/OI is DEEP & INGESTED, "
+        "superseding the prior data-gate cited by S2.3/S9. [VÉRIFIÉ S0/COVERAGE.md].",
     ),
     DataSource(
         "Amberdata", DataStatus.NOT_ACQUIRED, "paid alt-data vendor (not quantified)",
@@ -1027,6 +1217,58 @@ class AcquisitionMap:
 
 
 # --------------------------------------------------------------------------- #
+# v-next — funding_squeeze status DOWNGRADE (convergent evidence)
+# --------------------------------------------------------------------------- #
+# The lone crypto sleeve that ever looked like a survivor. Two independent lines of evidence now
+# converge to DOWNGRADE it from "validated survivor" to WEAKLY-SUPPORTED / not-robustly-confirmed:
+#   (1) this module's own deflation re-gates it REJECT at the true book count (1869, now 1891);
+#   (2) S2's 4h CLUSTER-AWARE re-test finds it suggestive-but-NS in bull (macro-event t=1.50) and
+#       not-established in bear (n 35→21 macro-events, t=1.23), with the sign NOT flipping bull↔bear
+#       (so it is not pure bull-beta, but it is not robustly confirmed either).
+# The per-trade Sharpe (0.16 all-23 / 0.24 deep) is the real-but-weak band — a leak would read ≫1.
+# [VÉRIFIÉ vs ../hermes-s2-xsec/research_streams/S2/FINDINGS.md].
+FUNDING_SQUEEZE_STATUS: dict = {
+    "sleeve": "funding_squeeze",
+    "prior_label": "validated survivor (joint-null p=0.017)",
+    "status": "WEAKLY_SUPPORTED",
+    "confirmed": False,
+    "per_trade_sharpe": {"all23": 0.16, "deep_btc_eth_sol": 0.24},
+    "bull": {
+        "excess_bps": 217,            # all-23 pool
+        "iid_p": 5e-05,               # i.i.d. random-entry null (anti-conservative under clustering)
+        "macro_event_t": 1.50,        # macro-event-blocked (cluster-aware) → NOT significant
+        "macro_event_significant": False,
+        "trade_median_bps": 25,
+    },
+    "bear": {
+        "n_trades": 35,
+        "n_macro_events": 21,         # 35 trades collapse to 21 macro-events
+        "macro_event_t": 1.23,        # NOT significant
+        "macro_event_significant": False,
+    },
+    "sign_flips_bull_bear": False,
+    "evidence": [
+        "deflation re-gate REJECTs at the true book count (1869 → 1891) — fails the deflated bar",
+        "S2 4h cluster-aware: bull macro-event t=1.50 (NS), median +25bps only; the i.i.d. p=1e-4 is "
+        "anti-conservative because squeezes co-fire across alts (cluster-aware null is mandatory)",
+        "S2 bear: 35 trades → 21 macro-events, t=1.23 (NS) → NOT established in bear",
+        "sign does NOT flip bull↔bear → not pure bull-beta, but NOT robustly confirmed",
+        "per-trade Sharpe 0.16 (all-23) / 0.24 (deep) = real-but-weak, NOT a leak (a leak reads ≫1)",
+    ],
+    "note": (
+        "DO NOT treat the live funding_squeeze as a confirmed edge. It is real-but-weak and "
+        "unconfirmed; it is NOT a promotion candidate today and requires clean OOS-forward "
+        "(Task 4) plus a cluster-aware re-confirmation to ever change status. Stays shadow size 0."
+    ),
+}
+
+
+def funding_squeeze_status() -> dict:
+    """The downgraded, convergent-evidence verdict on ``funding_squeeze`` (WEAKLY_SUPPORTED)."""
+    return dict(FUNDING_SQUEEZE_STATUS)
+
+
+# --------------------------------------------------------------------------- #
 # 10.3 — GP / D1 lock
 # --------------------------------------------------------------------------- #
 # The D1 feature-zoo ML falsification result — the evidence the GP lock cites.
@@ -1053,17 +1295,23 @@ def gp_lock_status(
     book_harness_trusted: bool = False,
     validated_orthogonal_feature_count: int = 0,
     min_validated_features: int = 3,
+    forward_validated_candidate: bool = False,
+    candidate_sleeves_today: list[str] | None = None,
 ) -> dict:
-    """The explicit GP / feature-zoo (D1) lock (mandate 10.3).
+    """The explicit GP / feature-zoo (D1) lock (mandate 10.3), now also gated by OOS-forward.
 
     Genetic/symbolic-GP feature search is the Renaissance machinery AND an overfitting
     engine — so it runs LAST. It stays LOCKED until ALL of:
       1. the deflation budget (DSR/PBO promotion bar) exists and is TRUSTED;
       2. the Stream-1 combined-book harness is merged and TRUSTED;
       3. a zoo of ≥ ``min_validated_features`` features ALREADY validated orthogonal by
-         other streams exists (GP combines validated features, it does not invent them).
+         other streams exists (GP combines validated features, it does not invent them);
+      4. (v-next Task 4) at least one sleeve has actually cleared the OOS-FORWARD precondition —
+         i.e. the deflation discipline has produced a real forward-validated candidate, not just
+         in-sample survivors. TODAY this is UNMET: funding_squeeze is only WEAKLY supported and the
+         cross-sectional family is dead, so there is no candidate sleeve at all.
 
-    All three default to UNMET, so by default the lock is engaged. The lock cites the D1
+    All conditions default to UNMET, so by default the lock is engaged. The lock cites the D1
     NO_EDGE evidence so no one re-litigates it without a new orthogonal feature.
     """
     conditions = [
@@ -1084,15 +1332,25 @@ def gp_lock_status(
             f"streams (currently {validated_orthogonal_feature_count}).",
             "met": validated_orthogonal_feature_count >= min_validated_features,
         },
+        {
+            "key": "forward_validated_candidate_exists",
+            "description": "≥1 sleeve has cleared the OOS-FORWARD precondition (Task 4): clean forward "
+            "OOS accrued in real regime with the AM-4 leak audit replayed. None exists today.",
+            "met": bool(forward_validated_candidate),
+        },
     ]
     locked = not all(c["met"] for c in conditions)
     return {
         "locked": locked,
         "conditions": conditions,
         "current_validated_feature_count": validated_orthogonal_feature_count,
+        "candidate_sleeves_today": list(candidate_sleeves_today or []),
+        "funding_squeeze": funding_squeeze_status(),
         "evidence": D1_NO_EDGE,
         "note": (
             "D1 remains LOCKED until every condition is met. Re-running ML/GP over the same exhausted "
-            "8-feature zoo is forbidden; only a genuinely NEW orthogonal feature can reopen it."
+            "8-feature zoo is forbidden; only a genuinely NEW orthogonal feature can reopen it. "
+            "v-next: GP additionally requires a forward-VALIDATED candidate — and there is none today "
+            "(funding_squeeze WEAKLY_SUPPORTED, cross-sectional family dead)."
         ),
     }
