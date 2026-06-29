@@ -32,7 +32,9 @@ DUCKDB_PATH = REPO_ROOT / "data" / "hermes_datalake.duckdb"
 # history; it is recorded as a dead source in the manifest (see _record_dead).
 SOURCE_ORDER = [
     "coinglass",     # rate-limited centerpiece (deep OI/funding/LSR/options) — first
+    "coinglass_multi",   # cross-venue funding+OI (OKX/Bybit/Bitget+Binance) — S0 re-freeze scout
     "binance",       # perp klines 1d/6h + deep funding
+    "binance_extended",  # 4h klines (max depth) + deep native funding + extended universe (S0 re-freeze)
     "deribit",       # DVOL history (backfill) + forward surface snapshot
     "defillama",     # stablecoin total/USDT/USDC supply
     "fred",          # macro: DFII10/DGS10/T10Y2Y/BAMLH0A0HYM2/DTWEXBGS
