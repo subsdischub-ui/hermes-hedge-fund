@@ -84,6 +84,70 @@ def combinatorial_purged_splits(
     return splits
 
 
+def regime_aware_purged_splits(
+    n_obs: int,
+    regime_labels,
+    n_groups: int = 6,
+    k_test: int = 2,
+    embargo: int = 0,
+) -> dict:
+    """Regime-aware CPCV (Stream 8, §8.3) — an OPTIONAL add that does **not** touch
+    ``combinatorial_purged_splits``.
+
+    Standard CPCV holds out contiguous *time* blocks, so a sleeve whose edge lives
+    only in one regime can pass by averaging the good regime over the bad. Here we
+    instead run CPCV *within each regime's index subset*: partition each regime's
+    bars (in time order) into ``n_groups`` blocks and hold out every ``k_test``-combo,
+    yielding a separate ``C(n_groups, k_test)`` Sharpe distribution per regime — so a
+    regime-specific edge is *seen* as such rather than blended away.
+
+    ``regime_labels`` is an array aligned to ``range(n_obs)``; non-finite labels
+    (e.g. the engine's warmup burn-in) are excluded from every fold. As in
+    ``combinatorial_purged_splits``, "purge" here means test indices never appear in
+    train; the **label-horizon** protection is the caller's ``embargo`` (this function
+    does not infer label spans), which drops train indices within ``embargo`` of any
+    test index **on the global time axis** (the right generalisation when a regime's
+    indices are non-contiguous in global time). For non-overlapping trade-level
+    returns, ``embargo=0`` is already leak-free; pass the sleeve's hold horizon when
+    marking overlapping bar-level labels.
+
+    Returns ``{regime_label: [(train_idx, test_idx), ...]}``. A regime with fewer than
+    ``n_groups`` bars cannot be split and maps to ``[]``.
+    """
+    if n_obs <= 0 or n_groups < 2 or k_test < 1 or k_test >= n_groups:
+        return {}
+
+    labels = np.asarray(regime_labels)
+    out: dict = {}
+    finite = np.isfinite(labels) if labels.dtype.kind == "f" else np.ones(n_obs, bool)
+    distinct = sorted({labels[i].item() for i in range(n_obs) if finite[i]})
+
+    for label in distinct:
+        regime_idx = np.array(
+            [i for i in range(n_obs) if finite[i] and labels[i].item() == label],
+            dtype=np.int64,
+        )
+        if regime_idx.size < n_groups:
+            out[label] = []
+            continue
+
+        blocks = np.array_split(regime_idx, n_groups)  # contiguous within the regime
+        splits: list[tuple[np.ndarray, np.ndarray]] = []
+        for combo in itertools.combinations(range(n_groups), k_test):
+            test_idx = np.concatenate([blocks[b] for b in combo])
+            test_set = set(test_idx.tolist())
+            train_idx = np.array(
+                [i for i in regime_idx.tolist() if i not in test_set], dtype=np.int64
+            )
+            if embargo > 0 and train_idx.size and test_idx.size:
+                dist = np.abs(train_idx[:, None] - test_idx[None, :]).min(axis=1)
+                train_idx = train_idx[dist > embargo]
+            splits.append((np.sort(train_idx), np.sort(test_idx)))
+        out[label] = splits
+
+    return out
+
+
 class TrialRegistry:
     """Persistent counter of backtested configurations (the DSR's true n_trials).
 

@@ -10,6 +10,7 @@ import math
 
 from hermes.strategies.combination import (
     annotate_active_and_blend,
+    blend_live_shadow,
     inverse_vol_weights,
     route_regime,
     select_active_skills,
@@ -118,6 +119,23 @@ def test_select_active_skills_range_routes_range_plus_always_on():
     assert out == ["mean_rev", "pairs", "tod"]
 
 
+def test_combination_slate_matches_live_allowed_skills():
+    """ANTI-DRIFT GUARD: the advisory slate (TREND+RANGE+ALWAYS_ON) must cover EXACTLY
+    the live tradable slate (config strategy.allowed_skills), so the regime blend never
+    tags a RETIRED strategy nor omits a LIVE one. This caught the stale slate that once
+    still listed breakout_vol_expansion / pairs_eth_btc / intraday_tod_btc (all refuted)
+    and omitted the live funding sleeves (Strategy #2 & #3)."""
+    from hermes.settings import get_settings
+    from hermes.strategies.combination import ALWAYS_ON, RANGE_SKILLS, TREND_SKILLS
+
+    allowed = set(get_settings().yaml("strategy", "allowed_skills") or [])
+    slate = set(TREND_SKILLS) | set(RANGE_SKILLS) | set(ALWAYS_ON)
+    assert slate == allowed, (
+        f"combination advisory slate {sorted(slate)} drifted from live "
+        f"allowed_skills {sorted(allowed)} — update combination.py constants"
+    )
+
+
 # --------------------------------------------------------------------------- #
 # annotate_active_and_blend (live advisory wiring of the combination layer)
 # --------------------------------------------------------------------------- #
@@ -127,11 +145,11 @@ def test_annotate_marks_active_set_and_normalised_blend_weights():
     signals = [
         {"skill_id": "ts_mom_vol_scaled", "confidence": 0.5},
         {"skill_id": "mean_reversion_regime", "confidence": 0.5},
-        {"skill_id": "pairs_eth_btc", "confidence": 0.5},
+        {"skill_id": "funding_squeeze_continuation", "confidence": 0.5},
     ]
     returns = {
         "ts_mom_vol_scaled": [0.01, -0.01, 0.02],
-        "pairs_eth_btc": [0.005, -0.002, 0.001],
+        "funding_squeeze_continuation": [0.005, -0.002, 0.001],
     }
     regime, out = annotate_active_and_blend(
         signals, efficiency_ratio=0.6, prev_state=None, returns_by_skill=returns
@@ -140,7 +158,7 @@ def test_annotate_marks_active_set_and_normalised_blend_weights():
     by = {s["skill_id"]: s for s in out}
     assert by["ts_mom_vol_scaled"]["active"] is True  # trend skill, trend regime
     assert by["mean_reversion_regime"]["active"] is False  # range skill, off-regime
-    assert by["pairs_eth_btc"]["active"] is True  # always-on
+    assert by["funding_squeeze_continuation"]["active"] is True  # always-on (regime-independent)
     # Blend weights are over the active skills that have usable history, summing 1.
     assert by["ts_mom_vol_scaled"]["blend_weight"] > 0.0
     assert by["mean_reversion_regime"]["blend_weight"] == 0.0
@@ -166,3 +184,62 @@ def test_annotate_no_history_gives_zero_blend_but_still_routes():
     assert regime == "trend"
     assert out[0]["active"] is True
     assert out[0]["blend_weight"] == 0.0  # no usable returns -> no live blend yet
+
+
+# --------------------------------------------------------------------------- #
+# blend_live_shadow (advisory -> blend live shadow, log-only — §1.2)
+# --------------------------------------------------------------------------- #
+
+
+def test_blend_live_shadow_packages_a_loggable_record_with_real_returns():
+    """When per-skill returns are plumbed in, the layer's blend is non-trivial and
+    is packaged as a structured SHADOW record (regime, active set, weights, gross)
+    ready to be logged so its apport can be measured over time."""
+    signals = [
+        {"skill_id": "ts_mom_vol_scaled", "confidence": 0.5},
+        {"skill_id": "funding_squeeze_continuation", "confidence": 0.5},
+    ]
+    returns = {
+        "ts_mom_vol_scaled": [0.01, -0.01, 0.02],
+        "funding_squeeze_continuation": [0.005, -0.002, 0.001],
+    }
+    regime, enriched, record = blend_live_shadow(
+        signals, efficiency_ratio=0.6, prev_state=None, returns_by_skill=returns
+    )
+    assert regime == "trend"
+    # The record captures the live (non-zero) blend over the active sleeves.
+    assert set(record["blend_weights"]) == {
+        "ts_mom_vol_scaled",
+        "funding_squeeze_continuation",
+    }
+    assert math.isclose(record["gross"], 1.0, rel_tol=1e-9)
+    assert sorted(record["active_skills"]) == [
+        "funding_squeeze_continuation",
+        "ts_mom_vol_scaled",
+    ]
+    # enriched signals are still returned (advisory enrichment preserved).
+    assert all("blend_weight" in s for s in enriched)
+
+
+def test_blend_live_shadow_is_zero_size_log_only():
+    """It is SHADOW: it logs what it WOULD allocate; it never sizes or trades."""
+    signals = [{"skill_id": "funding_squeeze_continuation", "confidence": 0.5}]
+    returns = {"funding_squeeze_continuation": [0.005, -0.002, 0.001]}
+    _, _, record = blend_live_shadow(
+        signals, efficiency_ratio=0.1, prev_state=None, returns_by_skill=returns
+    )
+    assert record["shadow"] is True
+    assert record["size"] == 0.0
+
+
+def test_blend_live_shadow_empty_returns_is_advisory_zero_blend():
+    """With no journal returns plumbed in (the current live state) the blend is
+    empty (gross 0) — i.e. this gracefully degrades to the advisory behaviour."""
+    signals = [{"skill_id": "funding_squeeze_continuation", "confidence": 0.5}]
+    _, _, record = blend_live_shadow(
+        signals, efficiency_ratio=0.1, prev_state=None, returns_by_skill={}
+    )
+    assert record["blend_weights"] == {}
+    assert record["gross"] == 0.0
+    assert record["shadow"] is True
+    assert record["size"] == 0.0

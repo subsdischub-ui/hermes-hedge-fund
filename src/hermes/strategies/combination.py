@@ -20,15 +20,23 @@ from statistics import variance
 
 __all__ = [
     "annotate_active_and_blend",
+    "blend_live_shadow",
     "inverse_vol_weights",
     "route_regime",
     "select_active_skills",
 ]
 
-# Strategy Engine v1 slate → regime buckets (ids match the skill library).
-TREND_SKILLS = ["ts_mom_vol_scaled", "breakout_vol_expansion"]
+# The LIVE crypto slate → regime buckets. Must stay in sync with
+# config/default.yaml:strategy.allowed_skills (pinned by
+# test_combination_slate_matches_live_allowed_skills, so it can't silently drift
+# again). Strategy #1 = ts_mom_vol_scaled (trend) + mean_reversion_regime (range);
+# Strategy #2 funding_squeeze_continuation and #3 funding_carry_harvest are
+# regime-INDEPENDENT (they arm on the perp funding rate / are delta-neutral), so
+# they live in ALWAYS_ON. The retired families (breakout_vol_expansion,
+# pairs_eth_btc, intraday_tod_btc — all refuted/not in allowed_skills) were removed.
+TREND_SKILLS = ["ts_mom_vol_scaled"]
 RANGE_SKILLS = ["mean_reversion_regime"]
-ALWAYS_ON = ["pairs_eth_btc", "intraday_tod_btc"]
+ALWAYS_ON = ["funding_squeeze_continuation", "funding_carry_harvest"]
 
 
 def _equal_weights(keys: Sequence[str]) -> dict[str, float]:
@@ -96,8 +104,8 @@ def select_active_skills(
     """Pick the active skill set for `regime`, plus the always-on (orthogonal) legs.
 
     trend -> trend_skills + always_on; anything else -> range_skills + always_on.
-    Pairs / time-of-day skills live in `always_on` because they are regime-
-    independent (market-neutral or intraday) and so run regardless.
+    The funding sleeves live in `always_on` because they are regime-independent
+    (they arm on the perp funding rate / are delta-neutral) and so run regardless.
     """
     regime_skills = trend_skills if regime == "trend" else range_skills
     return [*regime_skills, *always_on]
@@ -143,3 +151,44 @@ def annotate_active_and_blend(
         }
         out.append(enriched)
     return regime, out
+
+
+def blend_live_shadow(
+    signals: list[dict],
+    efficiency_ratio: float,
+    prev_state: str | None,
+    returns_by_skill: dict[str, list[float]],
+) -> tuple[str, list[dict], dict]:
+    """Promote the combination layer from *advisory* to *blend live shadow* (§1.2).
+
+    The advisory layer (``annotate_active_and_blend``) only tags signals, and in
+    live its blend weights are 0 because no per-skill returns are plumbed in. This
+    wrapper takes the SAME pure primitives but, when real ``returns_by_skill`` (e.g.
+    the per-skill realised returns from the trade journal) are supplied, packages
+    the layer's actual blend as a structured SHADOW RECORD — regime, active sleeve
+    set, the normalised blend weights, and the gross — ready to be LOGGED so the
+    combination layer's real apport can be measured over time.
+
+    It is still SHADOW / log-only: ``size == 0.0`` and ``shadow is True``. It logs
+    what it WOULD allocate; it never sizes a position or places an order. Purity is
+    preserved — this returns the record; the caller owns the log emission (and, at
+    the human merge gate, the one-line wiring that feeds journal returns here).
+    Returns ``(regime, enriched_signals, shadow_record)``.
+    """
+    regime, enriched = annotate_active_and_blend(
+        signals, efficiency_ratio, prev_state, returns_by_skill
+    )
+    blend = {
+        s["skill_id"]: float(s["blend_weight"])
+        for s in enriched
+        if s.get("active") and s.get("blend_weight", 0.0) > 0.0
+    }
+    record = {
+        "regime": regime,
+        "active_skills": sorted({s["skill_id"] for s in enriched if s.get("active")}),
+        "blend_weights": blend,
+        "gross": float(sum(blend.values())),
+        "shadow": True,  # log-only: this layer never sizes or trades
+        "size": 0.0,
+    }
+    return regime, enriched, record
