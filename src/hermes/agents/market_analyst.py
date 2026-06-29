@@ -39,6 +39,20 @@ async def run(state: HermesState) -> HermesState:
     except Exception as e:
         log.warning("funding_attach_failed", symbol=state.symbol, error=str(e))
 
+    # Attach the new-data SHADOW features (options-IV DVOL z, on-chain stablecoin z)
+    # so the shadow sleeves compute + log; best-effort, they HOLD if unavailable.
+    try:
+        from hermes.data.newdata import dvol_z_now, stbl_supply_growth_z_now
+
+        dz = await dvol_z_now(state.symbol.split("/")[0])
+        if dz is not None:
+            df["dvol_z_90d"] = dz
+        sz = await stbl_supply_growth_z_now()
+        if sz is not None:
+            df["stbl_supply_growth_z"] = sz
+    except Exception as e:
+        log.warning("newdata_attach_failed", symbol=state.symbol, error=str(e))
+
     h, l, c = df["high"], df["low"], df["close"]
     tr = pd.concat([h - l, (h - c.shift(1)).abs(), (l - c.shift(1)).abs()], axis=1).max(axis=1)
     atr = tr.rolling(14).mean().iloc[-1]

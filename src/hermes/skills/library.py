@@ -179,6 +179,10 @@ def _build_registry() -> dict[str, Skill]:
     from hermes.research.signals import funding_carry_harvest, funding_squeeze_continuation
     from hermes.skills.intraday_tod import intraday_tod_btc
     from hermes.skills.mean_reversion_regime import mean_reversion_regime
+    from hermes.skills.newdata_shadow import (
+        onchain_stablecoin_growth,
+        options_iv_dvol_reversion,
+    )
     from hermes.skills.ts_mom import ts_mom_vol_scaled
 
     return {
@@ -217,6 +221,28 @@ def _build_registry() -> dict[str, Skill]:
             description="Intraday time-of-day BTC: the 13:00→14:00 UTC post-US-open return predicts the 20:00→21:00 UTC close window. ≤1 trade/day, BTC only.",
             fn=intraday_tod_btc,
             symbols=("BTC",),
+        ),
+        # --- SHADOW sleeves (new-data diversifiers) -------------------------- #
+        # Both are DEMOTED/NOT-confirmed candidates (each FAILS the deflated bar:
+        # DVOL Bonferroni p across the config grid; stablecoin null). Slow-orthogonal
+        # on data OUTSIDE OHLCV+funding (options-implied vol + on-chain stablecoin
+        # supply), shadowed to accrue clean forward OOS. Registered so the
+        # dashboard shows their gauge, but DELIBERATELY kept OUT of
+        # strategy.allowed_skills: the selective gate (hermes.risk.selective) rejects
+        # any skill not in the slate, so these are computed + logged every tick yet
+        # can NEVER be routed to execution. Log-only until they prove forward (same
+        # SHADOW discipline as funding_carry_harvest). BTC/ETH only (where validated).
+        "options_iv_dvol_reversion": Skill(
+            id="options_iv_dvol_reversion",
+            description="SHADOW: Deribit DVOL fear/complacency reversion (z>=+2 long, <=-2 short, ~24h). New-data diversifier (rho -0.26 vs momentum); needs a dvol_z_90d column attached live. BTC/ETH only.",
+            fn=options_iv_dvol_reversion,
+            symbols=("BTC", "ETH"),
+        ),
+        "onchain_stablecoin_growth": Skill(
+            id="onchain_stablecoin_growth",
+            description="SHADOW: on-chain stablecoin-supply-growth (USDT+USDC 60d z; >=+1 long, <=-1 short, ~3d). New-data diversifier (rho ~0 vs funding); needs a stbl_supply_growth_z column attached live. BTC/ETH only.",
+            fn=onchain_stablecoin_growth,
+            symbols=("BTC", "ETH"),
         ),
     }
 

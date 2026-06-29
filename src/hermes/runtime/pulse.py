@@ -64,6 +64,24 @@ def pulse_entry(
             would_act, would_skill, reason = s.side, s.skill_id, "would enter (passes selective gate)"
             break
         reason = why  # remember the last rejection reason
+
+    # SHADOW gauges (read-only): skills registered in the library but NOT in the live
+    # slate (allowed_skills). They are computed + displayed every tick so the dashboard
+    # shows them in a separate panel, but they are excluded from would_act BY
+    # CONSTRUCTION — selective_gate rejects any skill not in the slate (see
+    # test_selective_gate_rejects_shadow_skill_even_with_strong_buy), so this loop only
+    # ADDS display gauges and never touches the would_act decision computed above.
+    allowed = set(cfg.allowed_skills)
+    for s in signals:
+        if s.skill_id in allowed or s.side == "HOLD":
+            continue
+        gauges.append({
+            "shadow": True,
+            "skill": s.skill_id,
+            "side": s.side,
+            "conf": round(float(s.confidence), 2),
+            "armed": True,  # a non-HOLD shadow signal is firing (size 0, log-only)
+        })
     return {
         "kind": "pulse",
         "symbol": symbol,
