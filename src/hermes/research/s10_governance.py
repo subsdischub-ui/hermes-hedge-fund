@@ -159,6 +159,19 @@ class PromotionThresholds:
 # Policy (head-of-research, Stream 10.1). The floor is shared; the deflation layer is
 # strictly stricter on FX (and at least as strict on cross-book) because cheap FX cost
 # moves the binding constraint from cost to overfitting. These are the tunable knobs.
+#
+# ⚠ POLICY vs DOCTRINE — do NOT cite these numbers as mandated. The written doctrine fixes ONLY a
+# loose baseline: "DSR>0 au vrai trial count, PBO<0.5" (STREAM_COMMON.md §3.6), |ρ|<0.3 (§3.7), and
+# MC random-entry/sign p<0.05 as a FLOOR not the bar (§3.5); it says FX must be "plus strict" with NO
+# magnitude. Everything tighter below is AUTHOR POLICY, not doctrine:
+#   (a) min_dsr is a PROBABILITY bar, not a raw DSR — it is P(true Sharpe > the n_trials deflation
+#       benchmark), so 0.95/0.975 mean "95%/97.5% confidence" (see PromotionThresholds docstring).
+#       Doctrine only requires DSR>0; the 0.95-probability bar has prior-practice precedent
+#       (DOSSIER_HERMES.md ~L1892/1894) but the crypto-vs-FX split is mine.
+#   (b) the FX/cross tightening 0.40 (PBO) and 0.975 (DSR) appears in NO doctrine/mandate file —
+#       they are my head-of-research choice and are overridable here.
+#   (c) baseline a future reader may rely on as mandated = DSR>0, PBO<0.5, |ρ|<0.3, MC p<0.05 (floor).
+# See research_streams/S10/FINDINGS.md §7 (the decision flagged for Malachie).
 CRYPTO_BAR = PromotionThresholds(max_pbo=0.50, min_dsr=0.95)
 FX_BAR = PromotionThresholds(max_pbo=0.40, min_dsr=0.975)
 CROSS_BAR = PromotionThresholds(max_pbo=0.40, min_dsr=0.975)
