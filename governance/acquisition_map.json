@@ -1,0 +1,106 @@
+[
+  {
+    "source": "CoinGlass",
+    "status": "acquired",
+    "cost": "paid plan / COINGLASS_API_KEY (~30 req/min)",
+    "unlocks": "deep crypto positioning history (top/global LSR, taker volume, OI OHLC, funding, liquidations; top-LSR BTC back to 2020-05-16). DEEP MULTI-VENUE funding/OI ingested: Binance 2020-03-30 \u00b7 OKX/Bybit 2020-10-30 \u00b7 Bitget 2021-08-12 (OI deeper still: OKX 2020-04-17, Bybit 2020-05-08) \u2014 coinglass_multi_{funding_rate,open_interest}",
+    "streams_affected": "Stream 0 lake; Stream 2/3 (positioning) FULLY UNBLOCKED; Stream 2.3/9 cross-venue UNBLOCKED",
+    "notes": "Frozen into the point-in-time lake. CORRECTION (S0 re-freeze): the lake is NO LONGER 'Binance-only' \u2014 multi-venue (OKX/Bybit\u21922020, Bitget\u21922021) funding/OI is DEEP & INGESTED, superseding the prior data-gate cited by S2.3/S9. [V\u00c9RIFI\u00c9 S0/COVERAGE.md]."
+  },
+  {
+    "source": "Amberdata",
+    "status": "not_acquired",
+    "cost": "paid alt-data vendor (not quantified)",
+    "unlocks": "true 25\u0394 option skew / GEX / Greeks history (backfilled, since ~2021-05) for crypto options",
+    "streams_affected": "Stream 4 (options surface 2.0)",
+    "notes": "ARBITRATE. Standing recommendation: NO. Do not buy until Stream 4 demonstrates a backtestable forward edge from the forward-only deribit surface_snapshot that would only be STRENGTHENED by history \u2014 otherwise it funds a likely re-wrap of the dead RSKEW/options grid."
+  },
+  {
+    "source": "FRED (St. Louis Fed)",
+    "status": "free",
+    "cost": "$0 (keyless graph CSV; key at ~/.fred_api_key for ALFRED)",
+    "unlocks": "DFII10, DGS10, T10Y2Y, BAMLH0A0HYM2 (+vintage), DTWEXBGS, GVZCLS",
+    "streams_affected": "FX/metals research; Stream 0 lake",
+    "notes": "Keyless == vintage for DFII10 specifically (0.000bp revision). B2/B3 ultimately REFUTED."
+  },
+  {
+    "source": "WGC (World Gold Council / Goldhub)",
+    "status": "acquired",
+    "cost": "$0 but MANUAL download",
+    "unlocks": "authoritative central-bank gold demand (reported+unreported), GDT balance (ETF line), monthly/annual CB changes (Turkey twins \u2014 don't sum naively)",
+    "streams_affected": "Stream 6 (CB-demand conditioner)",
+    "notes": "Ingested via manual_gold.run() from manually-downloaded Goldhub files. Closed 2026-06-26."
+  },
+  {
+    "source": "BIS cbspeak",
+    "status": "free",
+    "cost": "$0",
+    "unlocks": "BIS central-banker speeches corpus 1996+ (~20k) + FOMC statements (carries BoE speeches)",
+    "streams_affected": "Stream 0 lake; Stream 7 (CB tone)",
+    "notes": "Filter by speaker (institution column sparse). FOMC tone-at-print (E3) itself REFUTED."
+  },
+  {
+    "source": "GLD flows (SPDR)",
+    "status": "free",
+    "cost": "$0 (historical-archive xlsx, no key; exchange=NYSE)",
+    "unlocks": "GLD Total Ounces in Trust, 21.6y, published-final",
+    "streams_affected": "FX/metals research (B5); Stream 0 lake",
+    "notes": "\u22653d lag recommended. B5 directional signal REFUTED (flow lags price)."
+  },
+  {
+    "source": "IAU flows (iShares)",
+    "status": "acquired",
+    "cost": "$0 but MANUAL download",
+    "unlocks": "iShares IAU ETF flows 2005\u21922026",
+    "streams_affected": "Stream 0 lake; gold research",
+    "notes": "Closed 2026-06-26 via manual_gold ingestion (durable manual parquet)."
+  },
+  {
+    "source": "CFTC COT (Socrata legacy 6dca-aqww)",
+    "status": "free",
+    "cost": "$0 (no key)",
+    "unlocks": "40.4y / 12,949 weekly COT positioning (gold/silver/EUR/AUD/JPY/GBP)",
+    "streams_affected": "FX/metals research (B1)",
+    "notes": "Stitch on cftc_contract_market_code, not name. +1wk lag. B1 contrarian REFUTED."
+  },
+  {
+    "source": "Deribit (DVOL / surface)",
+    "status": "free",
+    "cost": "$0 (public endpoints)",
+    "unlocks": "DVOL hourly BTC/ETH since 2021-03-24; 25\u0394 risk-reversal surface_snapshot (FORWARD-LOG only)",
+    "streams_affected": "Stream 0 lake; Stream 4 (DVOL VRP sizing gate)",
+    "notes": "The 25\u0394 RR surface is forward-only (NOT backfillable) \u2014 the only unexplored options axis; revisit in ~6-12 months once history accrues. DVOL VRP is a SIZING gate, not direction."
+  },
+  {
+    "source": "EIA API (energy)",
+    "status": "free",
+    "cost": "$0 (free, registration required)",
+    "unlocks": "WTI term-structure (C1-C4) live continuation",
+    "streams_affected": "Physical-commodities research (E2)",
+    "notes": "Tier-0 hygiene. E2 roll-yield\u2192FX REFUTED (sign inverted)."
+  },
+  {
+    "source": "ForexFactory macro calendar",
+    "status": "not_acquired",
+    "cost": "paid calendar-history vendor",
+    "unlocks": "multi-year (actual, forecast) macro-surprise panel",
+    "streams_affected": "Stream 7 (macro surprise, B4)",
+    "notes": "SETTLED DEAD / UNBACKTESTABLE on free data. Only a paid vendor or a forward-accruing cron unlocks it. Standing recommendation: do NOT spend; prefer the forward-accruing cron."
+  },
+  {
+    "source": "Databento (CME curves / futures)",
+    "status": "do_not_spend",
+    "cost": "$125 credit held; ~$25-80/mo paid",
+    "unlocks": "CME term-structure / futures curves (roll-yield, carry, inventory premia)",
+    "streams_affected": "physical-commodities / FX expansion",
+    "notes": "DO NOT SPEND. Every physical premium was REFUTED on free evidence and WTI ground-truth showed the roll-yield sign is inverted. Keep the $125 credit unspent."
+  },
+  {
+    "source": "Generic alt-data (satellite / AIS)",
+    "status": "do_not_spend",
+    "cost": "$100s-$1000s/mo",
+    "unlocks": "satellite imagery, AIS shipping, premium alt-data",
+    "streams_affected": "physical-commodities / FX expansion",
+    "notes": "DEFER/NEVER. Free pre-print edge already contradicts the thesis."
+  }
+]

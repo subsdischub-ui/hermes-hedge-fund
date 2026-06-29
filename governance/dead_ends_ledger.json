@@ -1,0 +1,577 @@
+[
+  {
+    "name": "Gold trend-following (TSMOM on gold)",
+    "book": "fx_metals",
+    "date": "inherited / re-confirmed 2026-06-24",
+    "what_tested": "Time-series momentum / trend-following on gold, 26y daily.",
+    "why_dead": "Secular-bull-beta in a TSMOM costume \u2014 the MC random-entry null BEATS it; 26y daily net-NEGATIVE; loses the decisive 2011-15 bear. A random long-biased entry already earns gold's drift, so trend rules add nothing.",
+    "kill_metric": "MC random-entry null beats it; 26y net-NEGATIVE; loses 2011-15 bear",
+    "revive_condition": "A non-price trend confirmation on an independent channel that de-betas gold's secular drift, or a trend test on an instrument without a 25y secular uptrend.",
+    "tags": [
+      "gold trend",
+      "trend following gold",
+      "tsmom gold",
+      "gold tsmom",
+      "gold momentum"
+    ]
+  },
+  {
+    "name": "B1 COT positioning-extreme contrarian",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 3)",
+    "what_tested": "156wk-percentile COT noncomm net positioning, fade extremes, 6 instruments, +1wk lag.",
+    "why_dead": "Generalizes to NONE: only silver clears the MC-null but fails OOS-Sharpe>0.3; the short leg fights the secular bull; pooled is noise.",
+    "kill_metric": "best MC-p 0.011 (silver only); 0/6 generalize; pooled Sharpe 0.014",
+    "revive_condition": "A disaggregated/managed-money positioning panel with a true point-in-time vintage archive, or an intraday positioning proxy.",
+    "tags": [
+      "cot positioning",
+      "cot contrarian",
+      "cot extreme",
+      "commitment of traders",
+      "cot net"
+    ]
+  },
+  {
+    "name": "B2 real-rate (DFII10) shock \u2192 gold",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 3)",
+    "what_tested": "10y TIPS real-yield 5d z-shock \u2192 directional gold, +1bd lag, over the 2011-15 bear.",
+    "why_dead": "Secular-bull-beta: raw +31.9bps but sharply NEGATIVE through the 2011-15 bear; AUD inverts. Vintage audit confirms data honesty \u2192 refutation is purely economic.",
+    "kill_metric": "XAU MC-null p=0.059 (FAIL); 2011-15 bear -39.5/-127.9bps XAU/XAG",
+    "revive_condition": "A regime-conditioned real-rate state that genuinely de-betas the secular gold drift AND beats both base and complement at shuffle-null p<0.05 (Stream 6 gold_regime_state).",
+    "tags": [
+      "dfii10",
+      "real-rate",
+      "real rate",
+      "tips yield",
+      "realrate"
+    ]
+  },
+  {
+    "name": "B3 GVZ gold implied-vol reversion",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 3)",
+    "what_tested": "Gold implied-vol (CBOE GVZ) 252d z-score, fade \u00b12\u03c3 (the crypto-DVOL analog on gold).",
+    "why_dead": "Tail-driven long-gold drift, not vol-timing; silver negative \u2192 fails cross-asset; both metals negative in the 2011-15 bear.",
+    "kill_metric": "XAU MC-null p=0.144 (FAIL); winsorized collapses to +46bps; silver negative",
+    "revive_condition": "An OTC option-skew / 25\u0394 risk-reversal series (paywalled) rather than ATM GVZ, or a non-directional vol-sizing target.",
+    "tags": [
+      "gvz",
+      "gold implied vol",
+      "gold vrp",
+      "gold vol reversion"
+    ]
+  },
+  {
+    "name": "B5 GLD ETF-flow divergence (directional)",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 3)",
+    "what_tested": "SPDR GLD ounces-in-trust 60d flow z-score / flow-vs-price divergence (stablecoin analog).",
+    "why_dead": "Gold ETF flow LAGS price; no defensive value in the bear; silver negative, pooled negative. Worst sleeve in the book (LOO-\u0394-Sharpe -0.014).",
+    "kill_metric": "XAU MC-null p=0.203 (FAIL); flow lags price; LOO-\u0394-Sharpe -0.014",
+    "revive_condition": "A genuinely LEADING physical/flow series (COMEX registered/eligible inventory, or creation/redemption order flow that precedes price).",
+    "tags": [
+      "gld flow",
+      "gld-flow",
+      "etf flow",
+      "gold etf flow",
+      "ounces in trust"
+    ]
+  },
+  {
+    "name": "B4 ForexFactory economic-surprise index",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 2/4)",
+    "what_tested": "Self-built (actual \u2212 forecast) macro-surprise index from a free ForexFactory mirror.",
+    "why_dead": "DATA-LOCKED, not falsified on merit: free mirror is current-week-only with no `actual` field; site Cloudflare-403; ALFRED has no consensus forecast.",
+    "kill_metric": "0 years of usable (actual,forecast) history",
+    "revive_condition": "A free/affordable multi-year (actual, forecast, release-timestamp) calendar panel, or a forward-accruing cron (weekly snapshot + post-release re-pull).",
+    "tags": [
+      "forexfactory",
+      "forex factory",
+      "economic surprise",
+      "macro surprise",
+      "actual vs forecast"
+    ]
+  },
+  {
+    "name": "E1 COMEX physical inventory",
+    "book": "structural",
+    "date": "2026-06-24 (Loop 4)",
+    "what_tested": "COMEX warehouse registered/eligible gold ounces as a physical-tightness signal.",
+    "why_dead": "DATA-BLOCKED: no free scriptable multi-year COMEX feed; CME ToU bans automation; all mirrors 403/paywalled. PIT-ideal but moot.",
+    "kill_metric": "0 years of free automatable inventory history",
+    "revive_condition": "A licensed or genuinely free, automatable, multi-year COMEX/LBMA physical-inventory history (the highest-value untested physical axis if the data wall falls).",
+    "tags": [
+      "comex inventory",
+      "comex warehouse",
+      "registered eligible",
+      "physical inventory"
+    ]
+  },
+  {
+    "name": "E2 WTI term-structure roll-yield \u2192 CAD/AUD",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 5)",
+    "what_tested": "Crude term-structure roll-yield (EIA WTI C1-C4) as a commodity-currency signal, 18 configs.",
+    "why_dead": "Both legs net-negative; generalizes only in its failure; the MC null is not cleared on ANY of the 18 configs (roll-yield sign is inverted).",
+    "kill_metric": "MC-null fails all 18 configs, min p=0.169",
+    "revive_condition": "A distinct energy/weather/storage axis with its own economic channel (natgas/HDD\u2192NOK), or a free multi-maturity metals curve for an actual carry test.",
+    "tags": [
+      "wti term",
+      "wti roll",
+      "crude roll",
+      "term structure roll",
+      "roll yield"
+    ]
+  },
+  {
+    "name": "E3 FOMC tone-change at the print",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 5/6)",
+    "what_tested": "Hawk/dove tone surprise from FOMC statements (frozen lexicon), next-session entry.",
+    "why_dead": "Fully repriced at the 2pm print; nothing tradeable next session. Pooled MC-null p=0.707; the synchronized-event basket fix made it harder and it still failed.",
+    "kill_metric": "pooled MC-null p=0.707; basket null n=58 p=0.515; XAU p=0.440",
+    "revive_condition": "A markedly higher-frequency/intraday FOMC reaction axis, or the SLOW inter-meeting hawk/dove DRIFT of speeches entered OUTSIDE the blackout (Stream 7.1 \u2014 a different axis).",
+    "tags": [
+      "fomc tone",
+      "fomc statement",
+      "fomc print",
+      "tone surprise at print",
+      "hawk dove print"
+    ]
+  },
+  {
+    "name": "X1 crypto-fear \u2192 safe-haven (one-brain crossing)",
+    "book": "cross",
+    "date": "2026-06-24 (Loop 6)",
+    "what_tested": "Does crypto DVOL fear lead a safe-haven bid in gold/JPY/CHF? +3d lag, causal alignment.",
+    "why_dead": "Crypto-fear gold drift is secular-bull-beta (+53bps \u2248 unconditional +48bps); no incremental haven alpha. crypto\u2194FX lead-lag is zero; low \u03c1 is itself beta/regime-dependent.",
+    "kill_metric": "date-level basket MC-null p=0.174; +53bps vs +48bps unconditional",
+    "revive_condition": "An intraday crypto\u2192FX lead-lag axis (minutes/hours around crypto vol spikes vs a concurrently-trading FX venue).",
+    "tags": [
+      "crypto fear safe haven",
+      "dvol safe haven",
+      "crypto haven",
+      "crypto to fx lead"
+    ]
+  },
+  {
+    "name": "X2 stablecoin dry-powder \u2192 risk-on FX (one-brain crossing)",
+    "book": "cross",
+    "date": "2026-06-24 (Loop 6)",
+    "what_tested": "Does stablecoin supply growth lead risk-on FX (AUD up / JPY down)? +3d lag.",
+    "why_dead": "AUD/JPY are one risk-on/off factor, not two confirmations (colinear-channel rule); basket null not cleared. The leading-dry-powder mechanism is crypto-specific.",
+    "kill_metric": "date-level basket MC-null p=0.2375; AUD/JPY \u2248 1 effective bet",
+    "revive_condition": "A stablecoin/flow signal mapped onto genuinely DISTINCT FX risk channels, or an intraday alignment where dry-powder actually leads an FX session open.",
+    "tags": [
+      "stablecoin risk fx",
+      "stablecoin dry powder fx",
+      "dry powder risk on",
+      "stablecoin to fx"
+    ]
+  },
+  {
+    "name": "X3 conditioning / interactions (signal \u00d7 regime)",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 6)",
+    "what_tested": "Conditioning a base signal on a regime (real-rate\u2192gold gated on COT-in-band; GVZ on high-vol).",
+    "why_dead": "A non-event: conditioned \u2248 base (+34.9 vs +32.0bps); the COMPLEMENT scores higher \u2192 the gate selects nothing. Conditioning cannot manufacture edge from a zero-gross/bull-beta base.",
+    "kill_metric": "shuffle-label p=0.42; complement > in-band set",
+    "revive_condition": "A regime variable with a true independent channel applied to a base that ALREADY has standalone edge (conditioning arbitrates surviving alpha; it cannot create it).",
+    "tags": [
+      "conditioning",
+      "signal x regime",
+      "interaction regime gate",
+      "regime conditioning gold"
+    ]
+  },
+  {
+    "name": "D1 ML feature-zoo combination (GBM/LogReg over 8 features)",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 6)",
+    "what_tested": "Best leakage-free GBM/LogReg over all 8 orthogonal causal features, 6467 XAU daily bars, purged/combinatorial CV.",
+    "why_dead": "NO_EDGE: OOS accuracy \u2264 the long base rate; +15bps net is just cost-of-being-long (bull-beta); the combined MC-null is not beaten at all; PBO=0 irrelevant (no skill).",
+    "kill_metric": "OOS acc 0.518-0.543 \u2264 0.556 base; combined MC-null p=1.000; PBO=0",
+    "revive_condition": "A genuinely NEW orthogonal feature carrying directional info absent from the 8-feature zoo (intraday CME order-flow, OTC skew, COMEX inventory, a real (actual,forecast) panel). Re-running ML over the same exhausted features is forbidden.",
+    "tags": [
+      "feature zoo",
+      "ml combination",
+      "feature-zoo",
+      "gbm logit gold",
+      "ml feature zoo",
+      "d1 feature zoo"
+    ]
+  },
+  {
+    "name": "Combined FX book-of-4 under MC-null-first hierarchy",
+    "book": "fx_metals",
+    "date": "2026-06-24 (Loop 3)",
+    "what_tested": "The \u00a77 BOOK thesis on the 4 B-frontier sleeves (CPCV/PBO/DSR + LOO-\u0394-Sharpe).",
+    "why_dead": "A diversification MIRAGE: none of the 4 clears the HARD MC-null prerequisite; admitting them on positive in-sample LOO inflates PBO and dies OOS. NEVER admit an MC-null-failer on LOO grounds.",
+    "kill_metric": "book DSR 0.287, PBO 0.782, Sharpe 0.0177, n_trials 24; enforced book = empty",
+    "revive_condition": "\u22652 sleeves that each independently clear the MC-null (p<0.05) on \u22652 distinct-channel instruments; only then does LOO-\u0394-Sharpe arbitrate.",
+    "tags": [
+      "fx book of 4",
+      "book of four",
+      "diversification mirage",
+      "loo on noise"
+    ]
+  },
+  {
+    "name": "Fast/any-cadence single-asset OHLCV families",
+    "book": "crypto",
+    "date": "inherited (~11 crypto) / re-confirmed FX",
+    "what_tested": "Fast vol-scaled momentum, Donchian/vol-expansion breakout, short-horizon continuation, intraday mean-reversion \u2014 single-asset OHLCV.",
+    "why_dead": "Die net of honest cost = whipsaw. (Distinct from the LIVE slow-selective ts_mom_vol_scaled.)",
+    "kill_metric": "net of honest per-asset cost = whipsaw (negative)",
+    "revive_condition": "Not the cadence \u2014 a genuinely new NON-OHLCV exogenous data axis.",
+    "tags": [
+      "vol-scaled momentum",
+      "breakout vol expansion",
+      "donchian",
+      "intraday mean reversion",
+      "short-horizon continuation",
+      "fast ohlcv",
+      "ohlcv momentum"
+    ]
+  },
+  {
+    "name": "Cointegration / pairs (incl. gold-silver)",
+    "book": "fx_metals",
+    "date": "inherited / re-confirmed 2026-06-24",
+    "what_tested": "Cointegration / statistical-arbitrage pairs on crypto AND FX/metals.",
+    "why_dead": "The killer is the half-life (structural), not cost: spread half-lives are 20-99 DAYS (gold-silver ~10d). No fast reversion to harvest in an honest holding period.",
+    "kill_metric": "spread half-life 20-99 days (gold-silver ~10d)",
+    "revive_condition": "A pair whose spread has a genuinely short (days, not weeks) mean-reversion half-life \u2014 a different driver than the slow-cointegrating macro pairs.",
+    "tags": [
+      "cointegration",
+      "stat arb pairs",
+      "pairs trade",
+      "gold silver pair",
+      "eth btc pair",
+      "pairs_eth_btc"
+    ]
+  },
+  {
+    "name": "Session / time-of-day on FX",
+    "book": "fx_metals",
+    "date": "inherited / re-confirmed 2026-06-24",
+    "what_tested": "Session and time-of-day directional effects on FX (London/NY open, hour-of-day).",
+    "why_dead": "Gross pre-cost return is zero-mean \u2014 no edge even before cost.",
+    "kill_metric": "gross pre-cost = zero-mean",
+    "revive_condition": "A session effect tied to a specific exogenous event/flow (a fix/auction with measurable order imbalance), not a calendar-clock anomaly.",
+    "tags": [
+      "session time of day",
+      "time-of-day",
+      "intraday tod",
+      "hour of day fx",
+      "london open",
+      "intraday_tod"
+    ]
+  },
+  {
+    "name": "Cross-sectional momentum & temporal lead-lag",
+    "book": "cross",
+    "date": "inherited / re-confirmed 2026-06-24",
+    "what_tested": "Cross-sectional momentum and lead-lag (BTC\u2192alts, DXY\u2192majors, XAU\u2192AUD).",
+    "why_dead": "Single-asset artifacts or thin tail/news-driven; do not generalize.",
+    "kill_metric": "single-asset artifacts; thin tail/news-driven",
+    "revive_condition": "A lead-lag with a verified causal microstructure mechanism (order-flow leading, not returns-on-returns) across distinct channels.",
+    "tags": [
+      "cross-sectional momentum",
+      "lead-lag",
+      "lead lag",
+      "btc to alts",
+      "dxy to majors",
+      "xau to aud"
+    ]
+  },
+  {
+    "name": "Trade-flow microstructure (OFI/CVD from SPOT taker volume)",
+    "book": "crypto",
+    "date": "inherited",
+    "what_tested": "Order-flow imbalance / CVD from taker-buy SPOT volume.",
+    "why_dead": "Redundant with price momentum (\u03c1 0.77-0.96) or funding-collinear; the only orthogonal config dies on honest 2\u00d7RT cost. (CME FUTURES tape is a DIFFERENT untested axis.)",
+    "kill_metric": "\u03c1 0.77-0.96 vs momentum; orthogonal config dies on 2\u00d7RT cost",
+    "revive_condition": "Real intraday CME FUTURES tape / order-flow / CVD (paywalled) \u2014 a different axis from the dead SPOT taker-buy volume.",
+    "tags": [
+      "ofi",
+      "cvd",
+      "trade-flow microstructure",
+      "taker buy volume",
+      "order flow imbalance spot"
+    ]
+  },
+  {
+    "name": "Maker-execution free lunch",
+    "book": "structural",
+    "date": "inherited / re-confirmed 2026-06-24",
+    "what_tested": "Passive maker-order execution to capture spread/rebate as a free-lunch edge.",
+    "why_dead": "MIRAGE \u2014 adverse selection: ~99% fill but you fill the losers and miss the winners; realized PnL negative.",
+    "kill_metric": "~99% fill, adverse selection (miss +59..+204bps winners)",
+    "revive_condition": "A venue/microstructure where queue position is informative without adverse selection (a verified rebate on uninformed flow).",
+    "tags": [
+      "maker execution",
+      "maker free lunch",
+      "maker rebate",
+      "passive maker fill"
+    ]
+  },
+  {
+    "name": "H2 funding term-structure (literal term-spread)",
+    "book": "crypto",
+    "date": "from STREAM_02",
+    "what_tested": "Simple perp funding term-spread as a directional signal.",
+    "why_dead": "Gross edge trivial and sign-inverted once cost applied; collapses into 'high funding continues' (already S2) or 'buy dips' (bull-beta).",
+    "kill_metric": "0.7 bps gross vs ~30 bps cost, sign inverted",
+    "revive_condition": "Cross-venue FUNDING DISPERSION + OI-acceleration at constant funding (multi-venue crowding) \u2014 NOT the simple term-spread.",
+    "tags": [
+      "funding term structure",
+      "funding term-spread",
+      "funding term spread"
+    ]
+  },
+  {
+    "name": "H5 liquidation-cascade reversion (OHLCV proxy)",
+    "book": "crypto",
+    "date": "from STREAM_02",
+    "what_tested": "Mean-reverting rebound after a forced-liquidation flush, using a Binance OHLCV proxy.",
+    "why_dead": "Proxy was pure bull-beta; the edge lived only in the bull leg.",
+    "kill_metric": "joint-null p=0.907 (bull-beta) on the OHLCV proxy",
+    "revive_condition": "Real coinglass_liquidation history (\u22652019, size/cluster) with STRICT bull/bear separation (the authorised re-test). If it again survives only in the bull leg \u2192 dead again.",
+    "tags": [
+      "liquidation cascade",
+      "liquidation flush",
+      "forced liquidation reversion",
+      "liquidation rebound"
+    ]
+  },
+  {
+    "name": "Options-surface grid (VRP/TERM/VOV/RSKEW, 1024 configs)",
+    "book": "crypto",
+    "date": "from STREAM_04",
+    "what_tested": "1024-config grid over crypto-options features (variance-risk-premium, term, vol-of-vol, realized-skew).",
+    "why_dead": "Grid-max did not beat the deflation null; classic overfit-grid death. RSKEW-fade is the SAME fear-reversion as the killed DVOL (~34% overlap).",
+    "kill_metric": "grid-max Sharpe 0.1934 < E[max|1024] 0.1950",
+    "revive_condition": "True 25\u0394 skew / Greeks history (Amberdata, or the forward-only deribit surface_snapshot once multi-year). DVOL stays a SIZING gate, not a directional signal.",
+    "tags": [
+      "options surface grid",
+      "vrp grid",
+      "rskew",
+      "vol of vol",
+      "realized skew",
+      "1024 config"
+    ]
+  },
+  {
+    "name": "Legacy dead crypto slate (breakout/pairs/intraday-tod)",
+    "book": "crypto",
+    "date": "from STREAM_01",
+    "what_tested": "Legacy crypto legs in combination.py: breakout_vol_expansion, pairs_eth_btc, intraday_tod_btc.",
+    "why_dead": "Dead ('morts'); to be PURGED from combination.py; the harness must NOT re-bless them. (ts_mom_vol_scaled is LIVE Strategy #1 \u2014 NOT in this dead list.)",
+    "kill_metric": "flagged dead; book rebuilt from confirmed/orthogonal sleeves only",
+    "revive_condition": "Not revivable as-is; would require a genuinely new orthogonal data axis via a fresh sleeve.",
+    "tags": [
+      "breakout_vol_expansion",
+      "pairs_eth_btc",
+      "intraday_tod_btc",
+      "dead slate",
+      "legacy slate"
+    ]
+  },
+  {
+    "name": "Pre-vetted-dead frontiers (pinning, skew, straddle, WMR fix, swap-free carry, GP search)",
+    "book": "structural",
+    "date": "inherited (do-not-start list)",
+    "what_tested": "NY 10am option strike-pinning; GLD/SLV ETF option-skew; release-minute straddle; month-end WMR 16:00 fix; swap-free carry spot-drift; genetic/symbolic-regression search.",
+    "why_dead": "Each pre-vetted dead: no free PIT strike/OI history; thin/paywalled skew; ~50-pip spread eats the straddle; WMR fix crowded/decayed; thin swap-free carry; GP = overfitting machine.",
+    "kill_metric": "no free PIT data / crowded / GP overfit machine",
+    "revive_condition": "Free PIT option strike/OI history; a non-crowded fix window; GP only after the deflation budget + book harness are trusted (see gp_lock_status).",
+    "tags": [
+      "strike pinning",
+      "10am pinning",
+      "gld skew",
+      "slv skew",
+      "release-minute straddle",
+      "wmr fix",
+      "swap-free carry",
+      "symbolic regression",
+      "genetic programming"
+    ]
+  },
+  {
+    "name": "S2.1 top-LSR contrarian positioning",
+    "book": "crypto",
+    "date": "2026 (Stream 2 outcome)",
+    "what_tested": "Top-trader long-short-ratio (CoinGlass) contrarian directional sleeve on BTC/ETH/SOL.",
+    "why_dead": "REFUTED: the \u22120.27 \u03c1(top_lsr, fwd) was a ~30-day MIRAGE; on full history \u03c1\u22480; the extreme form is directional beta whose sign flips bull\u2194bear; no per-instrument generalization.",
+    "kill_metric": "full-history \u03c1\u22480; sign flips bull\u2194bear; no generalization",
+    "revive_condition": "A positioning axis with a stable forward sign across regimes and \u22652 distinct-channel instruments (the slow daily top-LSR contrarian axis is exhausted). NEVER re-run continuous top-LSR.",
+    "tags": [
+      "top-lsr",
+      "top lsr",
+      "long-short ratio contrarian",
+      "lsr contrarian",
+      "positioning contrarian"
+    ]
+  },
+  {
+    "name": "S2.2 liquidation-cascade reversion (real CoinGlass data)",
+    "book": "crypto",
+    "date": "2026 (Stream 2 outcome)",
+    "what_tested": "Mean-reverting rebound after real CoinGlass liquidation flushes (\u22652019), bull/bear separated.",
+    "why_dead": "An audit caught a LOOK-AHEAD in the driver glue (trade side taken un-lagged at the entry bar \u2192 leaks the day's move); corrected via lagged side array \u2192 NO edge at any lag, DSR\u22480.",
+    "kill_metric": "after look-ahead fix: DSR\u22480 at every lag",
+    "revive_condition": "A genuinely leading liquidation microstructure (cluster/size at sub-daily cadence on a venue with no look-ahead in the side); the daily real-liquidation reversion axis is now also dead.",
+    "tags": [
+      "liquidation real data",
+      "coinglass liquidation reversion",
+      "liquidation cascade real"
+    ]
+  },
+  {
+    "name": "S3 funding-squeeze on 1d / universe expansion",
+    "book": "crypto",
+    "date": "2026 (Stream 3 outcome)",
+    "what_tested": "Generalizing the validated 4h funding_squeeze edge onto 1d bars and a wider instrument universe.",
+    "why_dead": "Does NOT generalize off 4h: 0/7 instruments pass the MC-null on 1d; AVAX is the lone Bonferroni survivor but mono-instrument \u2192 rejected. The validated edge is 4h, absent from the lake.",
+    "kill_metric": "0/7 pass MC-null on 1d; AVAX mono-instrument; mean_reversion_regime LOO \u22120.14",
+    "revive_condition": "A lake with 4h history for the wider universe (the validated cadence), or a new instrument that passes on its own distinct channel. Never lower z to force a pass.",
+    "tags": [
+      "funding_squeeze on 1d",
+      "funding squeeze 1d",
+      "universe expansion funding",
+      "1d universe"
+    ]
+  },
+  {
+    "name": "S4.3 VRP-DVOL sizing gate",
+    "book": "crypto",
+    "date": "2026 (Stream 4 outcome)",
+    "what_tested": "Using the DVOL variance-risk-premium as a SIZING multiplier on the live funding_squeeze sleeve.",
+    "why_dead": "Does NOT lift the held-out Sharpe: \u0394+0.045 \u2248 the deflation bar, shuffle-p 0.14-0.18 (fails the floor p<0.05), worse on the full sample, only 13 OOS trades \u2192 abandoned.",
+    "kill_metric": "\u0394+0.045 \u2248 deflation bar; shuffle-p 0.14-0.18; 13 OOS trades",
+    "revive_condition": "A non-directional vol/regime target with enough OOS trades and a shuffle-p<0.05 uplift. The DVOL VRP stays a research sizing gate, not a deployed multiplier.",
+    "tags": [
+      "vrp-dvol sizing",
+      "vrp dvol sizing",
+      "dvol sizing gate",
+      "vrp sizing"
+    ]
+  },
+  {
+    "name": "S5 gold-\u03b2-hedged metals relative-value book",
+    "book": "fx_metals",
+    "date": "2026 (Stream 5 outcome)",
+    "what_tested": "Gold-beta-hedged metals RV (gold/silver/miners) combined into a neutral book; gold-neutral spreads.",
+    "why_dead": "EMPTY book: gold-neutral spreads either re-import the OTHER metal's bull-beta or are unforecastable (gold+silver span ~2D). \u00a73.7 overfitting wall binds, not cost. Adversarially airtight.",
+    "kill_metric": "empty book; spreads re-import bull-beta or unforecastable (2D span)",
+    "revive_condition": "A genuinely third metals factor orthogonal to the gold/silver plane, or an FX IV panel for the data-locked 5.2 VRP/skew leg. The gold-\u03b2-hedged RV axis is exhausted.",
+    "tags": [
+      "gold-beta-hedged",
+      "metals relative value",
+      "metals rv",
+      "gold-silver-miners rv",
+      "gold neutral spread"
+    ]
+  },
+  {
+    "name": "S7 central-bank tone-drift (LLM hawk/dove)",
+    "book": "cross",
+    "date": "2026 (Stream 7 outcome)",
+    "what_tested": "LLM-scored hawk\u2194dove drift of inter-meeting Fed/ECB/BoE speeches \u2192 out-of-blackout basket gate.",
+    "why_dead": "Only the Fed price-basket lights up (MC-p 0.004) but FAILS: DSR 0.483<0.5; one-sided (dovish leg +78bps = gold/USD easing-regime BETA); rates channel dead (MC-p 0.144 \u2192 no 2nd distinct channel); the frozen E3 lexicon does NOT replicate (MC-p 0.085) \u2192 the LLM uplift is unconfirmable look-ahead.",
+    "kill_metric": "DSR 0.483<0.5; dovish leg = beta; rates MC-p 0.144; lexicon MC-p 0.085",
+    "revive_condition": "A tone signal that (a) replicates under a frozen pre-sample lexicon (no LLM look-ahead), (b) is two-sided not easing-regime beta, and (c) carries a 2nd distinct channel (rates, not just price).",
+    "tags": [
+      "cb tone",
+      "central-bank tone",
+      "hawk dove drift",
+      "tone drift",
+      "llm tone",
+      "fed tone drift"
+    ]
+  },
+  {
+    "name": "S8 regime conditioning of funding_squeeze (HMM/BOCPD)",
+    "book": "crypto",
+    "date": "2026 (Stream 8 outcome)",
+    "what_tested": "Conditioning/sizing the live funding_squeeze sleeve on a causal HMM/BOCPD/vol-bucket regime state.",
+    "why_dead": "No gate beats the shuffle-null: best HMM-trend conditioning shuffle-p\u22480.11 (right sign but underpowered); the regime state does not provably beat trivial efficiency-ratio. Regime-aware CPCV = KILL (split perm-p 0.135 = noise \u2192 keep standard CPCV). The state ships as an S8 input only.",
+    "kill_metric": "best conditioning shuffle-p\u22480.11; regime-aware CPCV perm-p 0.135 (noise)",
+    "revive_condition": "A base sleeve with standalone edge to condition (conditioning arbitrates surviving alpha, it cannot create it) and a regime gate that beats the shuffle-null p<0.05 on enough trades.",
+    "tags": [
+      "regime conditioning funding",
+      "hmm conditioning",
+      "bocpd conditioning",
+      "regime gate funding",
+      "regime-aware cpcv"
+    ]
+  },
+  {
+    "name": "S2.2A funding cross-sectional continuation (XS)",
+    "book": "crypto",
+    "date": "2026 (Stream 2 v-next)",
+    "what_tested": "Daily cross-sectional funding-z reshuffle, LONG high-funding / SHORT low-funding (continuation), tercile two-leg market-neutral.",
+    "why_dead": "WRONG-WAY SIGN \u2014 cross-sectional funding MEAN-REVERTS, it does not continue (gross-only ann Sharpe -1.38). Even with the sign flipped it is COST-KILLED: the two-leg honest cost is -16.85 bps/day because a daily funding-z reshuffle turns over ~100%/day. gross(price) -8.7 \u00b7 carry -1.45 \u00b7 cost -16.85 bps. MC random-sign p=1.0 (sign wrong-way).",
+    "kill_metric": "gross_ann_sharpe -1.38 (wrong-way); cost -16.85 bps/day; ~100%/day rotation; MC-sign p=1.0",
+    "revive_condition": "A funding signal whose forward sign is STABLE (not mean-reverting) and that survives the ~100%/day two-leg cost \u2014 e.g. a slow, low-turnover funding state, NOT a daily XS reshuffle.",
+    "tags": [
+      "cross-sectional funding",
+      "funding cross-sectional",
+      "funding-xs",
+      "xs funding",
+      "funding cross sectional",
+      "cross sectional funding"
+    ]
+  },
+  {
+    "name": "S2.2D volatility-dispersion cross-sectional (XS)",
+    "book": "crypto",
+    "date": "2026 (Stream 2 v-next)",
+    "what_tested": "Cross-sectional realized-vol dispersion sleeve (long low-vol / short high-vol style), market-neutral.",
+    "why_dead": "NO EDGE: a faint positive whiff in the price spread (gross ann Sharpe +0.20) but it is NOT significant (MC random-sign p=0.311) and is eaten by cost (net -1.84 bps). Clean no-edge.",
+    "kill_metric": "gross ann Sharpe +0.20 (NS, MC-sign p=0.311); net -1.84 bps (cost-eaten)",
+    "revive_condition": "A vol-dispersion signal with a significant gross edge (MC-sign p<0.05) large enough to survive cost \u2014 the faint +0.20 whiff is not it.",
+    "tags": [
+      "vol dispersion",
+      "volatility dispersion",
+      "vol-dispersion",
+      "dispersion cross-sectional",
+      "vol dispersion xs"
+    ]
+  },
+  {
+    "name": "S2.2B open-interest-growth cross-sectional (XS)",
+    "book": "crypto",
+    "date": "2026 (Stream 2 v-next)",
+    "what_tested": "Cross-sectional open-interest growth sleeve over the only 7 CoinGlass-OI coins (ARB, AVAX, BTC, ETH, SOL, SUI, WIF), 1d.",
+    "why_dead": "DATA-GATED / UNDER-POWERED, not a clean refutation: only 7 names (often 4-5 available), and the 7 are current SURVIVORS (survivorship). gross ann Sharpe +0.13 (NS), cost -26 bps/day.",
+    "kill_metric": "7 coins (survivorship); gross +0.13 NS; cost -26 bps/day; under-powered",
+    "revive_condition": "A deep OI panel over a wider, point-in-time (non-survivorship) universe with enough names for a powered cross-sectional test.",
+    "tags": [
+      "oi growth",
+      "oi-growth",
+      "open-interest growth",
+      "open interest growth",
+      "oi growth xs"
+    ]
+  },
+  {
+    "name": "S2.3 cross-venue funding dispersion",
+    "book": "crypto",
+    "date": "2026 (Stream 2 v-next)",
+    "what_tested": "Cross-venue funding dispersion sleeve, 5 coins \u00d7 4 venues (Binance/OKX/Bybit/Bitget), 1d.",
+    "why_dead": "NO EDGE: ann Sharpe -0.44 (negative \u2192 wrong-sign), MC random-sign p=0.05, thin 5-coin universe. The multi-venue lake (S0) UNBLOCKED the data but the dispersion itself carries no tradeable edge.",
+    "kill_metric": "ann Sharpe -0.44 (wrong-sign); MC-sign p=0.05; thin 5-coin universe",
+    "revive_condition": "A cross-venue crowding signal with a stable forward sign on a wider venue\u00d7coin panel \u2014 the 5-coin dispersion is exhausted (data now exists; the edge does not).",
+    "tags": [
+      "cross-venue funding",
+      "cross-venue dispersion",
+      "cross venue dispersion",
+      "cross venue funding",
+      "cross-venue funding dispersion"
+    ]
+  }
+]

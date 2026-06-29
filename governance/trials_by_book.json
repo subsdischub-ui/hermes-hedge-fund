@@ -1,0 +1,72 @@
+{
+  "counts": {
+    "cross": 5,
+    "crypto": 1891,
+    "fx_metals": 53
+  },
+  "provenance": {
+    "cross": [
+      {
+        "n": 1,
+        "source": "X1_dvol_safe_haven"
+      },
+      {
+        "n": 1,
+        "source": "X2_stablecoin_risk_fx"
+      },
+      {
+        "n": 1,
+        "source": "X3_conditioning"
+      },
+      {
+        "n": 2,
+        "source": "crypto_fx_leadlag_both_ways"
+      }
+    ],
+    "crypto": [
+      {
+        "n": 648,
+        "source": "funding_discovery_walkforward_sweep"
+      },
+      {
+        "n": 1024,
+        "source": "options_surface_grid_VRP_TERM_VOV_RSKEW"
+      },
+      {
+        "n": 96,
+        "source": "dvol_reversion_config_grid"
+      },
+      {
+        "n": 96,
+        "source": "stablecoin_growth_config_grid"
+      },
+      {
+        "n": 5,
+        "source": "positioning_flow_hunts_H1_H5"
+      },
+      {
+        "n": 22,
+        "source": "S2_xsec_neutral_sleeves_4prereg_plus_18exploratory"
+      }
+    ],
+    "fx_metals": [
+      {
+        "n": 24,
+        "source": "B_frontier_hunts_B1_B2_B3_B5"
+      },
+      {
+        "n": 18,
+        "source": "E2_wti_termstruct_configs"
+      },
+      {
+        "n": 7,
+        "source": "E3_fomc_tone_nlp_design_budget"
+      },
+      {
+        "n": 4,
+        "source": "D1_ml_feature_zoo_configs"
+      }
+    ]
+  },
+  "seeded": true
+}
