@@ -18,19 +18,16 @@ dependencies = [
     "typer>=0.13",
     "structlog>=24.4",
     "tenacity>=9.0",
-
     # LLM orchestration
     "openai>=1.55",
     "langgraph>=0.2.50",
     "langchain-core>=0.3",
-
     # Memory
     "sqlalchemy>=2.0",
     "greenlet>=3.1",       # required by SQLAlchemy async; not auto-installed on macOS arm64
     "aiosqlite>=0.20",
     "chromadb>=0.5",
     "sentence-transformers>=3.3",
-
     # Market data + exchanges
     "ccxt>=4.4",
     "hyperliquid-python-sdk>=0.7",
@@ -40,14 +37,14 @@ dependencies = [
     "scikit-learn>=1.5",   # isotonic confidence calibration (risk/calibration.py)
     "statsmodels>=0.14",   # cointegration (Engle-Granger / ADF) for pairs strategy
     "pandas-ta>=0.3.14b",
-
     # Modelling (TRM runs on CPU inside the container)
     "torch>=2.5",
     "einops>=0.8",
     "pyyaml>=6.0",
-
     # Cache / queue
     "redis>=5.2",
+    "duckdb>=1.5.4",
+    "pyarrow>=24.0.0",
 ]
 
 [project.optional-dependencies]
