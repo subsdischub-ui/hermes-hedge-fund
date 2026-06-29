@@ -337,8 +337,10 @@ def test_book_trial_registry_defaults_to_shared_tracked_dir():
     assert reg.path.name == "trials_by_book.json"
 
 
-def test_crypto_seed_count_is_1891_after_s2(tmp_path):
-    """Crypto deflation count = 1869 (S0-era) + 22 (S2 v-next: 4 pre-reg + 18 exploratory)."""
+def test_crypto_embedded_seed_is_1891_after_s2(tmp_path):
+    """The EMBEDDED code seed = 1869 (S0-era) + 22 (S2 v-next: 4 pre-reg + 18 exploratory) = 1891.
+    The +1 forward XS-reversion pre-reg lives only in the committed governance/ JSON (bump,
+    not seed) → the canonical committed count is 1892, asserted by test_committed_canonical_count_is_1892."""
     reg = gov.BookTrialRegistry(tmp_path)
     reg.seed_defaults()
     assert reg.count(gov.Book.CRYPTO) == 1891
@@ -347,10 +349,11 @@ def test_crypto_seed_count_is_1891_after_s2(tmp_path):
     assert reg.count(gov.Book.CROSS) == 5
 
 
-def test_committed_canonical_count_is_1891():
-    """The MIGRATED, committed governance/trials_by_book.json pins the canonical crypto count."""
+def test_committed_canonical_count_is_1892():
+    """The MIGRATED, committed governance/trials_by_book.json pins the canonical crypto count
+    (1869 seed + 22 S2 v-next + 1 forward XS-reversion pre-reg = 1892 after the full round-2 merge)."""
     reg = gov.BookTrialRegistry()  # reads the committed governance/ JSON
-    assert reg.count(gov.Book.CRYPTO) == 1891
+    assert reg.count(gov.Book.CRYPTO) == 1892
 
 
 def test_governance_snapshots_are_synced_with_embedded_defaults():
