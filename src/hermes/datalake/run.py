@@ -35,6 +35,8 @@ SOURCE_ORDER = [
     "coinglass_multi",   # cross-venue funding+OI (OKX/Bybit/Bitget+Binance) — S0 re-freeze scout
     "binance",       # perp klines 1d/6h + deep funding
     "binance_extended",  # 4h klines (max depth) + deep native funding + extended universe (S0 re-freeze)
+    "binance_spot",  # SPOT 4h klines (cash-and-carry spot leg) — Stream 0-α
+    "hyperliquid",   # HL hourly funding + 4h klines (cross-venue carry, forward axis) — Stream 0-α
     "deribit",       # DVOL history (backfill) + forward surface snapshot
     "defillama",     # stablecoin total/USDT/USDC supply
     "fred",          # macro: DFII10/DGS10/T10Y2Y/BAMLH0A0HYM2/DTWEXBGS

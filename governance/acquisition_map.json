@@ -8,6 +8,22 @@
     "notes": "Frozen into the point-in-time lake. CORRECTION (S0 re-freeze): the lake is NO LONGER 'Binance-only' \u2014 multi-venue (OKX/Bybit\u21922020, Bitget\u21922021) funding/OI is DEEP & INGESTED, superseding the prior data-gate cited by S2.3/S9. [V\u00c9RIFI\u00c9 S0/COVERAGE.md]."
   },
   {
+    "source": "Binance SPOT (klines)",
+    "status": "free",
+    "cost": "$0 (public /api/v3/klines, no key)",
+    "unlocks": "SPOT 4h OHLCV at max depth for the 23-perp universe (BTC 2017-08-17 -> WIF 2024-03-05) \u2014 the cash-and-carry SPOT leg. View binance_spot_klines_4h, slash symbols (BTC/USDT), joins binance_klines_4h / binance_funding_on_4h on (ts, symbol).",
+    "streams_affected": "Stream 0-\u03b1 lake (Boucle \u03b1 cash-and-carry); funding_carry_harvest (S3) deployability",
+    "notes": "Acquired read-only into the PIT lake. Reachable from FR (no geo-block on the spot REST host). The delta-neutral P&L (spot + perp + funding) is now CALCULABLE via datalake.carry_join (data only \u2014 NO strategy, NO live wiring; that is the Boucle \u03b1 / merge-gate scope). [V\u00c9RIFI\u00c9 S0-\u03b1/COVERAGE_S0_ALPHA.md]."
+  },
+  {
+    "source": "Hyperliquid (public /info)",
+    "status": "free",
+    "cost": "$0 (public POST /info, no key / no KYC)",
+    "unlocks": "HOURLY funding history + 4h perp klines + market universe (incl. HIP-3 if listed) for the carry-relevant coins \u2014 cross-venue carry (Binance<->HL funding differential) + hourly granularity. Views hyperliquid_funding_1h / hyperliquid_klines, bare symbols (BTC).",
+    "streams_affected": "Stream 0-\u03b1 lake (cross-venue carry); Boucle \u03b1 (capacity-limited HIP-3 markets)",
+    "notes": "Acquired read-only into the PIT lake. SHALLOW vs Binance's 7y (HL perps inception recent \u2014 actual earliest ts recorded at ingest in COVERAGE) -> PRIMARILY-FORWARD axis; do not over-fit a short backtest. Funding paid hourly = 1/8 of the 8h rate; annualize x8760. DISTINCT from the off-limits execution/hyperliquid.py live adapter (data acquisition only). [V\u00c9RIFI\u00c9 S0-\u03b1/COVERAGE_S0_ALPHA.md]."
+  },
+  {
     "source": "Amberdata",
     "status": "not_acquired",
     "cost": "paid alt-data vendor (not quantified)",

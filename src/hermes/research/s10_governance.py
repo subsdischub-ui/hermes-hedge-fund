@@ -1078,6 +1078,29 @@ DEFAULT_ACQUISITION_MAP: list[DataSource] = [
         "superseding the prior data-gate cited by S2.3/S9. [VÉRIFIÉ S0/COVERAGE.md].",
     ),
     DataSource(
+        "Binance SPOT (klines)", DataStatus.FREE, "$0 (public /api/v3/klines, no key)",
+        "SPOT 4h OHLCV at max depth for the 23-perp universe (BTC 2017-08-17 -> WIF "
+        "2024-03-05) — the cash-and-carry SPOT leg. View binance_spot_klines_4h, slash "
+        "symbols (BTC/USDT), joins binance_klines_4h / binance_funding_on_4h on (ts, symbol).",
+        "Stream 0-α lake (Boucle α cash-and-carry); funding_carry_harvest (S3) deployability",
+        "Acquired read-only into the PIT lake. Reachable from FR (no geo-block on the spot REST host). "
+        "The delta-neutral P&L (spot + perp + funding) is now CALCULABLE via datalake.carry_join "
+        "(data only — NO strategy, NO live wiring; that is the Boucle α / merge-gate scope). "
+        "[VÉRIFIÉ S0-α/COVERAGE_S0_ALPHA.md].",
+    ),
+    DataSource(
+        "Hyperliquid (public /info)", DataStatus.FREE, "$0 (public POST /info, no key / no KYC)",
+        "HOURLY funding history + 4h perp klines + market universe (incl. HIP-3 if listed) for the "
+        "carry-relevant coins — cross-venue carry (Binance<->HL funding differential) + hourly "
+        "granularity. Views hyperliquid_funding_1h / hyperliquid_klines, bare symbols (BTC).",
+        "Stream 0-α lake (cross-venue carry); Boucle α (capacity-limited HIP-3 markets)",
+        "Acquired read-only into the PIT lake. SHALLOW vs Binance's 7y (HL perps inception recent — "
+        "actual earliest ts recorded at ingest in COVERAGE) -> PRIMARILY-FORWARD axis; do not over-fit "
+        "a short backtest. Funding paid hourly = 1/8 of the 8h rate; annualize x8760. DISTINCT from the "
+        "off-limits execution/hyperliquid.py live adapter (data acquisition only). "
+        "[VÉRIFIÉ S0-α/COVERAGE_S0_ALPHA.md].",
+    ),
+    DataSource(
         "Amberdata", DataStatus.NOT_ACQUIRED, "paid alt-data vendor (not quantified)",
         "true 25Δ option skew / GEX / Greeks history (backfilled, since ~2021-05) for crypto options",
         "Stream 4 (options surface 2.0)",
