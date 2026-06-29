@@ -51,11 +51,11 @@ def test_register_trials_bumps_new_trials_only_and_is_idempotent(tmp_path):
     # the committed, tested mechanism (replacing the manual one-off bump)
     res = prereg.register_trials(data_dir=tmp_path)
     reg = gov.BookTrialRegistry(tmp_path)
-    assert reg.count(gov.Book.CRYPTO) == 1870  # 1869 seed + 1 (xs_reversion only)
+    assert reg.count(gov.Book.CRYPTO) == 1892  # 1869 seed + 22 (S2 v-next, merged) + 1 (xs_reversion)
     assert "xs_funding_reversion" in res["registered"]
     assert "funding_squeeze_continuation" not in res["registered"]  # is_new_trial=False
     sources = {e["source"] for e in reg.provenance(gov.Book.CRYPTO)}
     assert "forward_xs_funding_reversion_prereg" in sources
     # idempotent: re-running must NOT double-count (bump() has no guard of its own)
     prereg.register_trials(data_dir=tmp_path)
-    assert gov.BookTrialRegistry(tmp_path).count(gov.Book.CRYPTO) == 1870
+    assert gov.BookTrialRegistry(tmp_path).count(gov.Book.CRYPTO) == 1892  # idempotent: re-run = no-op (still 1892, not doubled)
