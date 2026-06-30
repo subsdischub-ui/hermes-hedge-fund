@@ -1,0 +1,10 @@
+# CHECKPOINT — Boucle β Illiquid-Niche Carry (iter 0)
+
+- **VERDICT : négatif propre de déploiement — axe « petit-livre exploite l'illiquide » FERMÉ.** Hypothèse de migration **réfutée** (issue #3 du mandat, renforcée par H2). Red-teamé 3 agents → `verdict_robust`, aucun bug changeant le verdict.
+- **H1 (réfuté, tous axes)** : le carry **récoltable (signé)** monte AVEC la liquidité (pente forward 2025+ **+0.047 t+2.7** ; per-an native-mean **positif chaque année**). La queue a **2–3× plus** de funding en **magnitude** (médiane \|APR\| major 3.3 %/tail 8.6 %/exo 10.9 %) mais **négatif-signé** (non-récoltable). Absolus forward : majors ~0 %, queue Binance −6.6 %, exo HL méd −0.6 %/moy −10.7 %.
+- **H2 (pas de sweet spot)** : net forward 2025+ **poolé négatif −0.6 % (τ5)/−0.2 % (τ10)** ; **bande illiquide la PIRE** (−2.1 %/−1.1 %) vs mid +1.2 % vs upper −0.7 %. Le **brut est déjà ~0 à coût ZÉRO** (+0.7 %/+0.4 %) → coût **non load-bearing**. Queue brutale (maxDD −68 % LPT ; close-to-close ⇒ vraie queue pire).
+- **Reverse-carry FERMÉ (§3.4)** : récolter le funding négatif (long-perp/short-spot) = +15 % brut MAIS = prime de **borrow** short (no-arb) ; au borrow plein λ=1.0 → **−1.9 %** (0 % marchés positifs). Lake ne voit pas le borrow → non-revendicable. Cross-venue data-closed (seul HYPE sur 2 venues).
+- **Survivorship** : Binance tail = survivor-set pur → le +1.4 % full-history est un **plafond** ; HL ~24–25 % mortalité nette. Le biais rend le négatif **conservateur sur tous les axes** (exo HL exclus seraient *plus* négatifs).
+- **Limite donnée** : exotiques HL (le plus illiquide) **non-récoltables** en cash-and-carry (pas de jambe spot au lake) → H1 only ; H2 = 13 marchés Binance-tail à jambe spot.
+- **Livré** : `research/illiquid_carry.py` (21 tests TDD, ruff clean, 0 régression / 862 pass) + drivers BETA (run_h1/h2/h2_reverse) + §2 extension vues (rétro-compat, 42 tests α verts). Grille H2 pré-enreg **3 bandes × 2 τ = 6** → crypto **1900 → 1906**. Rien live ; S3 non touché.
+- **Pré-existant hors-sujet** : `openpyxl` manquant (1 test gold), `import fxgate` path (4 tests S6).
