@@ -1,7 +1,7 @@
 {
   "counts": {
     "cross": 5,
-    "crypto": 1892,
+    "crypto": 1900,
     "fx_metals": 53
   },
   "provenance": {
@@ -51,6 +51,10 @@
       {
         "n": 1,
         "source": "forward_xs_funding_reversion_prereg"
+      },
+      {
+        "n": 8,
+        "source": "alpha_carry_harvest_prereg_grid"
       }
     ],
     "fx_metals": [
