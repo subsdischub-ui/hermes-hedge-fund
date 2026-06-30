@@ -24,6 +24,22 @@
     "notes": "Acquired read-only into the PIT lake. SHALLOW vs Binance's 7y (HL perps inception recent \u2014 actual earliest ts recorded at ingest in COVERAGE) -> PRIMARILY-FORWARD axis; do not over-fit a short backtest. Funding paid hourly = 1/8 of the 8h rate; annualize x8760. DISTINCT from the off-limits execution/hyperliquid.py live adapter (data acquisition only). [V\u00c9RIFI\u00c9 S0-\u03b1/COVERAGE_S0_ALPHA.md]."
   },
   {
+    "source": "Binance USDT-M tail (perps beyond the 23)",
+    "status": "free",
+    "cost": "$0 (public /fapi/v1/exchangeInfo + /klines + /fundingRate + /ticker/24hr, no key)",
+    "unlocks": "spot+perp 4h klines + DEEP native funding for a stratified slice of the illiquid USDT-M perp tail (perps beyond the 23 majors), selected >=1y-depth + liquidity-decile stratified (illiquid-overweight). Views binance_tail_{klines_4h,spot_klines_4h,funding_native,funding_on_4h,universe}, slash symbols (BTC/USDT). Per-bar liquidity = dollar-notional (volume*close) via datalake.liquidity. The alpha carry machinery runs on them UNCHANGED.",
+    "streams_affected": "Stream 0-\u03b2 lake (Boucle \u03b2 illiquid-niche carry: H1 funding-vs-liquidity, H2 tail/slippage)",
+    "notes": "Acquired read-only into the PIT lake (ADDITIVE \u2014 the 23-major views byte-untouched). SURVIVORSHIP TRAP #1: /fapi/v1/exchangeInfo lists only currently-TRADING contracts -> DELISTED perps are ABSENT & un-enumerable (klines fetchable only by a known symbol we lack a list of) -> the slice is a SURVIVOR-SET; \u03b2 must bound conclusions accordingly (survivors overstate carry \u2014 delistings/rug-pulls are exactly where carry blew up). NO strategy / NO live wiring (Boucle \u03b2 / merge-gate scope). [V\u00c9RIFI\u00c9 S0-\u03b2/COVERAGE_S0_BETA.md]."
+  },
+  {
+    "source": "Hyperliquid exotic (/info full universe)",
+    "status": "free",
+    "cost": "$0 (public POST /info, no key / no KYC)",
+    "unlocks": "hourly funding + 4h klines for a stratified slice of HL EXOTIC markets (beyond the 23 overlap) + a full-exotic-universe liquidity SNAPSHOT (dayNtlVlm/openInterest/funding/isDelisted). Views hyperliquid_exotic_{ctx,funding_1h,klines,funding_on_4h}, bare symbols (BTC). The core of \u03b2's hypothesis (young, low-capital, generous-funding small-caps/HIP-3).",
+    "streams_affected": "Stream 0-\u03b2 lake (Boucle \u03b2 illiquid-niche carry)",
+    "notes": "Acquired read-only into the PIT lake (ADDITIVE \u2014 the 23-overlap views untouched). STRONGLY-FORWARD (HL exotics younger than the majors; >=1y depth probed at ingest). SURVIVORSHIP: HL is KINDER than Binance \u2014 delisted markets STAY in metaAndAssetCtxs (flagged isDelisted) so the survivorship gap is OBSERVABLE in hyperliquid_exotic_ctx (delisted are excluded from the tradeable slice). Native dayNtlVlm/impactPxs are richer liquidity proxies but snapshot-only. DISTINCT from the off-limits execution/hyperliquid.py adapter. [V\u00c9RIFI\u00c9 S0-\u03b2/COVERAGE_S0_BETA.md]."
+  },
+  {
     "source": "Amberdata",
     "status": "not_acquired",
     "cost": "paid alt-data vendor (not quantified)",
