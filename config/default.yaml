@@ -100,7 +100,14 @@ strategy:
   allowed_skills: [ts_mom_vol_scaled, mean_reversion_regime, funding_squeeze_continuation, funding_carry_harvest]
   conviction_min: 1.0          # ts_mom |score| saturation; mean_reversion/funding/carry self-select
   no_pyramid: true             # one position per symbol at a time (consolidation)
-  maker_orders: true           # prefer post-only limit fills; real fill rate measured on testnet
+  # DEFAULT OFF (2026-07-01): the fees: block below says "the paper exchange mirrors
+  # the taker fee ... under-charging here would open the gates on a fictional edge" —
+  # but maker_orders=true silently overrode that and charged perp_maker (~9bps RT)
+  # instead of perp_taker (~15bps RT, the cost every offline honesty audit uses) on
+  # EVERY selective-mode order, not just carry. No fill-rate model backs the maker
+  # assumption (the comment admits "real fill rate measured on testnet" — we aren't on
+  # testnet). Flip back to true only once a real measured fill-rate justifies it.
+  maker_orders: false
   decision_timeframe: 4h       # the rule is validated on 4h bars (decision loop + skills)
   max_hold_bars: 12            # default time exit = 12x4h ~ 48h (Strategy #1 vertical barrier)
   max_hold_bars_by_skill:      # per-strategy horizon overrides (mirror each backtest barrier)
