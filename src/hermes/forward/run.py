@@ -227,7 +227,13 @@ def main():  # pragma: no cover - CLI entry
     args = p.parse_args()
     from hermes.forward import prereg
 
-    trials = prereg.register_trials(data_dir=args.data_dir)  # idempotent pre-reg bump
+    # NOTE: deliberately do NOT pass --data-dir here. That flag is the root for THIS
+    # deployment's forward-collection logs (<data_dir>/forward/<flux>/); the trial
+    # registry is a SEPARATE, deployment-scoped concern that resolves on its own via
+    # governance_registry_dir() (HERMES_GOVERNANCE_DIR env var, or the committed repo
+    # dir in local/dev). Passing data_dir through here previously made the registry
+    # silently fork onto an ad-hoc path instead of its one persistent, intentional home.
+    trials = prereg.register_trials()  # idempotent pre-reg bump
     manifest = run_forward(data_dir=args.data_dir, wire_xs_reversion=args.wire_xs_reversion)
     manifest["trial_registry"] = trials
     print(json.dumps(manifest, indent=2, default=str))

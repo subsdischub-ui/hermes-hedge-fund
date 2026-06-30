@@ -35,6 +35,13 @@ services:
       REDIS_URL: redis://hermes-redis:6379/0
       DATABASE_URL: sqlite+aiosqlite:////data/hermes.db
       VECTOR_DIR: /data/chroma
+      # The S10 trial registry (deflation count) defaults to a COMMITTED repo dir
+      # (governance/) that this image does NOT bake in (Dockerfile only copies src/
+      # + config/) and that isn't under any mounted volume — writing there in prod
+      # would be invisible/lost on every redeploy. Anchor it on the persistent
+      # /data volume instead, under its own subdir (kept separate from the forward-
+      # collection logs at /data/forward/).
+      HERMES_GOVERNANCE_DIR: /data/governance
     volumes:
       - hermes-data:/data
     healthcheck:

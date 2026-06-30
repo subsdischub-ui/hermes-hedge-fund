@@ -8,9 +8,12 @@ default (fragile in-sample — see the sanity gate); funding-squeeze always runs
 
 from __future__ import annotations
 
+import sys
+
 import pandas as pd
 
 from hermes.forward import logio, run
+from hermes.research import s10_governance as gov
 
 _DAY_MS = 86_400_000
 _NOW = 100 * _DAY_MS + 3_600_000
@@ -49,6 +52,28 @@ def test_runner_is_idempotent_same_day(tmp_path):
     run.run_forward(data_dir=tmp_path, now_ms=_NOW + 60_000, collectors=[_ok_collector()])
     back = logio.read_log("flux_ok", data_dir=tmp_path)
     assert len(back) == 1  # re-running the same UTC day overwrites, never duplicates
+
+
+def test_cli_main_keeps_trial_registry_decoupled_from_forward_data_dir(tmp_path, monkeypatch):
+    """Regression guard: main() used to pass --data-dir straight through to the trial
+    registry, so production's BookTrialRegistry silently forked onto an ad-hoc path
+    instead of its one persistent, deployment-scoped home (HERMES_GOVERNANCE_DIR /
+    governance_registry_dir()). The forward-logs root and the registry's root are
+    DIFFERENT concerns and must resolve independently — pin that here so a future
+    edit can't quietly reintroduce the same fork."""
+    forward_root = tmp_path / "forward_logs"
+    registry_root = tmp_path / "registry"
+    monkeypatch.setenv("HERMES_GOVERNANCE_DIR", str(registry_root))
+    monkeypatch.setattr(
+        sys, "argv", ["run.py", "--data-dir", str(forward_root)]
+    )
+    run.main()
+    # The registry must land under HERMES_GOVERNANCE_DIR, NOT under --data-dir.
+    assert (registry_root / "trials_by_book.json").exists()
+    assert not (forward_root / "trials_by_book.json").exists()
+    assert gov.BookTrialRegistry().path == registry_root / "trials_by_book.json"
+    # The forward flux logs still respect --data-dir, untouched by this fix.
+    assert (forward_root / "forward").exists()
 
 
 def test_default_collectors_gate_xs_reversion_off_by_default():
