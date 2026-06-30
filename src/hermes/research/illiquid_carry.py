@@ -71,10 +71,14 @@ _BARS_PER_DAY_4H = 6.0
 # The full liquidity spectrum, one (venue, *_funding_on_4h view, funding interval) each.
 # Binance perps settle 8h; HL exotic funding is hourly. funding_vs_liquidity_from_lake
 # annualizes each to a common APR basis so the three venues are directly comparable.
-H1_SPECS: list[tuple[str, str, float]] = [
-    ("binance_major", "binance_funding_on_4h", 8.0),
-    ("binance_tail", "binance_tail_funding_on_4h", 8.0),
-    ("hl_exotic", "hyperliquid_exotic_funding_on_4h", 1.0),
+# (venue, *_funding_on_4h level/volume view, *_funding_native view for interval derivation).
+# The on_4h funding_rate is a backward-carried LEVEL (regress as level, never sum); the
+# native view is read ONLY to DERIVE the per-symbol settlement interval — Binance moved
+# many alts from 8h to 4h, so a hardcoded 8h understated their APR 2x (cf. CC audit).
+H1_SPECS: list[tuple[str, str, str]] = [
+    ("binance_major", "binance_funding_on_4h", "binance_funding_native"),
+    ("binance_tail", "binance_tail_funding_on_4h", "binance_tail_funding_native"),
+    ("hl_exotic", "hyperliquid_exotic_funding_on_4h", "hyperliquid_exotic_funding_1h"),
 ]
 
 
@@ -90,16 +94,27 @@ def assemble_h1_frame(
     """Pool the H1 frame ``[ts, symbol, funding_apr, dollar_volume, venue]`` across the
     full liquidity spectrum (read-only).
 
-    For each ``(venue, view, interval_hours)`` spec, reuse
+    For each ``(venue, on4h_view, native_view)`` spec, reuse
     ``liquidity.funding_vs_liquidity_from_lake`` (which annualizes funding to a common
     APR basis and attaches per-bar ``dollar_volume = volume*close``), tag the venue, and
     concatenate. ``start_ts`` (epoch ms) windows to a forward regime (e.g. 2025-01-01).
     """
     parts: list[pd.DataFrame] = []
-    for venue, view, interval in specs:
-        part = liq.funding_vs_liquidity_from_lake(con, view=view, funding_interval_hours=interval)
-        part = part.assign(venue=venue)
-        parts.append(part)
+    for venue, view, native_view in specs:
+        # Derive each symbol's funding interval from its NATIVE settlement spacing (one row =
+        # one real settlement), then annualize the on_4h LEVEL with that per-symbol interval.
+        nat = con.execute(f"SELECT symbol, ts FROM {native_view}").df()
+        intervals = {
+            sym: infer_funding_interval_hours(g["ts"].to_numpy())
+            for sym, g in nat.groupby("symbol")
+        }
+        for sym, interval in intervals.items():
+            if interval != interval:  # NaN: <2 settlements, cannot annualize
+                continue
+            part = liq.funding_vs_liquidity_from_lake(
+                con, view=view, symbol=sym, funding_interval_hours=interval
+            )
+            parts.append(part.assign(venue=venue))
     frame = pd.concat(parts, ignore_index=True)
     if start_ts is not None:
         frame = frame[frame["ts"] >= start_ts].reset_index(drop=True)
