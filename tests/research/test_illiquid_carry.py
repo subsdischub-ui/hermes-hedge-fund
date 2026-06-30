@@ -239,6 +239,13 @@ def _h1_lake_con():
         "binance_funding_on_4h": _tail_perp_on_4h("BTC/USDT"),
         "binance_tail_funding_on_4h": _tail_perp_on_4h("ANKR/USDT"),
         "hyperliquid_exotic_funding_on_4h": _exotic_perp_on_4h("TRB"),
+        # native views for per-symbol interval derivation (BTC/ANKR settle 8h; TRB hourly)
+        "binance_funding_native": pd.DataFrame(
+            {"ts": [0, EIGHT_H_MS], "funding_rate": [0.001, 0.001], "symbol": ["BTC/USDT"] * 2}),
+        "binance_tail_funding_native": pd.DataFrame(
+            {"ts": [0, EIGHT_H_MS], "funding_rate": [0.001, 0.001], "symbol": ["ANKR/USDT"] * 2}),
+        "hyperliquid_exotic_funding_1h": pd.DataFrame(
+            {"ts": [0, FOUR_H_MS // 4, FOUR_H_MS // 2], "funding_rate": [0.0001] * 3, "symbol": ["TRB"] * 3}),
     }
     for name, frame in reg.items():
         con.register(f"_{name}_df", frame)
@@ -355,3 +362,35 @@ def test_variable_cost_charges_more_when_entry_liquidity_is_worse():
     cheap = ic.gated_net_returns_variable_cost(basis, funding, armed, np.full(10, 0.002)).sum()
     dear = ic.gated_net_returns_variable_cost(basis, funding, armed, np.full(10, 0.020)).sum()
     assert dear < cheap  # higher prevailing slippage -> strictly lower net
+
+
+
+# --- H1 per-symbol funding-interval derivation (CC audit, post-merge) -------- #
+def test_assemble_h1_derives_per_symbol_4h_interval_keeping_on4h_source():
+    """A 4h-settling Binance tail perp must annualize the on_4h LEVEL at x2190 (8760/4),
+    NOT the old hardcoded 8h x1095. The source stays the on_4h level view; only the
+    interval is derived per symbol from native settlement spacing."""
+    duckdb = pytest.importorskip("duckdb")
+    con = duckdb.connect(":memory:")
+    reg = {
+        # on_4h level: funding_rate 0.0001 on the 4h grid (volume+close live here)
+        "binance_tail_funding_on_4h": pd.DataFrame({
+            "ts": [0, FOUR_H_MS, EIGHT_H_MS],
+            "open": [10.0] * 3, "high": [10.0] * 3, "low": [10.0] * 3, "close": [10.0] * 3,
+            "volume": [1000.0] * 3, "funding_rate": [0.0001, 0.0001, 0.0001],
+            "symbol": ["BIGTIME/USDT"] * 3,
+        }),
+        # native: settlements every 4h -> interval derives to 4.0 -> x2190
+        "binance_tail_funding_native": pd.DataFrame({
+            "ts": [0, FOUR_H_MS, EIGHT_H_MS], "funding_rate": [0.0001] * 3,
+            "symbol": ["BIGTIME/USDT"] * 3,
+        }),
+    }
+    for name, frame in reg.items():
+        con.register(f"_{name}_df", frame)
+        con.execute(f"CREATE VIEW {name} AS SELECT * FROM _{name}_df")
+    specs = [("binance_tail", "binance_tail_funding_on_4h", "binance_tail_funding_native")]
+    frame = ic.assemble_h1_frame(con, specs=specs)
+    aprs = frame.loc[frame["symbol"] == "BIGTIME/USDT", "funding_apr"].unique()
+    assert len(aprs) == 1
+    assert abs(float(aprs[0]) - 0.0001 * 2190) < 1e-9, f"expected x2190 (0.219), got {aprs[0]}"
