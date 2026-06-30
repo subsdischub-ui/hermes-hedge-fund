@@ -44,6 +44,15 @@ ordre et ne change aucune config. Mais cela ne veut PAS dire que le trading est 
 autonome s'en charge. Ne dis JAMAIS à l'opérateur qu'il doit trader « à la main » — c'est faux. La \
 seule chose manuelle est l'approvisionnement en argent RÉEL (étapes live futures), pas le paper.
 
+RÈGLE ABSOLUE ANTI-INVENTION : le contexte ci-dessous (état live, historique des trades, jauges) \
+contient TOUTES les données réelles dont tu disposes. Tu n'as ACCÈS À RIEN D'AUTRE — pas de mémoire \
+de séances passées, pas de détail au-delà de ce qui est listé. Si on te demande un détail absent du \
+contexte (un trade non listé, une raison précise non donnée, un chiffre non fourni), tu DOIS répondre \
+explicitement « cette donnée n'est pas dans mon contexte actuel » — JAMAIS l'inventer, même \
+partiellement, même pour paraître plus complet. Une réponse honnête et incomplète vaut TOUJOURS mieux \
+qu'une réponse plausible et fabriquée. C'est nous qui le découvrons à chaque fois — ne nous y refais \
+pas prendre.
+
 TES 3 STRATÉGIES (toutes validées hors-échantillon, SÉLECTIVES — elles ne tradent QUE quand \
 leur jauge est armée, sinon elles attendent par discipline) :
 - #1 Momentum sélectif (ts_mom |score|>=1.0, long/short, ~48h) : trade les tendances établies.
@@ -329,11 +338,25 @@ async def _chat_context() -> str:
             for g in (a.get("gauges") or [])
         )
         gauges.append(f"  - {sym} [{a.get('regime')}]: {gl}")
+    # Itemised trade history — without this, the LLM has only aggregates (count/
+    # win_rate/pnl) and confabulates per-trade detail when asked for it (observed
+    # live: invented 4/6 trades with full conviction). Capped so context size stays
+    # bounded once the journal grows past the stage_0 200-trade gate.
+    _TRADE_DETAIL_CAP = 20
+    trade_lines = [
+        f"  - {r.closed_at:%Y-%m-%d %H:%M} {r.symbol} {r.side} skill={r.skill_id or '?'} "
+        f"PnL ${round(r.pnl_usd or 0.0, 3)} (exit: {r.exit_reason or '?'})"
+        for r in closed[:_TRADE_DETAIL_CAP]
+    ]
+    if len(closed) > _TRADE_DETAIL_CAP:
+        trade_lines.append(f"  - ... et {len(closed) - _TRADE_DETAIL_CAP} trade(s) clos plus anciens (non listés ici, voir les stats agrégées ci-dessus pour le total).")
     return (
         f"ÉTAT LIVE DE NOTRE ENTREPRISE ({s.stage}):\n"
         f"- Capital paper: ${equity:.2f} (bankroll ${s.bankroll_usd}); univers {', '.join(s.universe)}\n"
         f"- Journal: {stats.get('count', 0)} trades clos, "
         f"win {stats.get('win_rate')}, PnL ${stats.get('pnl_usd', 0)}\n"
+        f"- Historique détaillé des trades clos (les SEULS trades réels — n'en invente JAMAIS d'autres):\n"
+        f"{chr(10).join(trade_lines) or '  (aucun trade clos pour le moment)'}\n"
         f"- Stratégies:\n{strat}\n"
         f"- Positions ouvertes: {pos}\n"
         f"- Ce que chaque sleeve voit maintenant:\n{chr(10).join(gauges) or '  (pas de pulse récent)'}"
