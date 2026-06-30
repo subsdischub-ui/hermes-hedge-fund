@@ -196,38 +196,55 @@ def align_cross_venue(
 # =========================================================================== #
 # lake conveniences — same alignment over real DuckDB views (read-only)
 # =========================================================================== #
-def cash_and_carry_from_lake(con: Any, symbol: str | None = None) -> pd.DataFrame:
-    """Read ``binance_spot_klines_4h`` ⋈ ``binance_funding_on_4h`` from a DuckDB
-    connection and return the aligned cash-and-carry frame. Read-only.
+def cash_and_carry_from_lake(
+    con: Any,
+    symbol: str | None = None,
+    *,
+    spot_view: str = "binance_spot_klines_4h",
+    perp_view: str = "binance_funding_on_4h",
+) -> pd.DataFrame:
+    """Read ``spot_view`` ⋈ ``perp_view`` from a DuckDB connection and return the
+    aligned cash-and-carry frame. Read-only.
 
     ``symbol`` (slash, e.g. 'BTC/USDT') filters one instrument; ``None`` aligns the
     whole book. Both views share the slash spelling, so the join is lossless.
+    ``spot_view`` / ``perp_view`` default to the 23-major views; pass the Boucle-β tail
+    spellings (``binance_tail_spot_klines_4h`` / ``binance_tail_funding_on_4h``) to run
+    the same alignment on the illiquid tail (the pure functions are symbol-agnostic).
     """
     spot_where = f" WHERE symbol = '{symbol}'" if symbol else ""
     spot = con.execute(
-        f"SELECT ts, symbol, close FROM binance_spot_klines_4h{spot_where}"
+        f"SELECT ts, symbol, close FROM {spot_view}{spot_where}"
     ).df()
     perp = con.execute(
-        f"SELECT ts, symbol, close, funding_rate FROM binance_funding_on_4h{spot_where}"
+        f"SELECT ts, symbol, close, funding_rate FROM {perp_view}{spot_where}"
     ).df()
     return align_cash_and_carry(spot, perp)
 
 
 def cross_venue_from_lake(
-    con: Any, coin: str, *, binance_interval_hours: float = 8.0
+    con: Any,
+    coin: str,
+    *,
+    binance_interval_hours: float = 8.0,
+    binance_view: str = "binance_funding_native",
+    hl_view: str = "hyperliquid_funding_1h",
 ) -> pd.DataFrame:
     """Read Binance native funding + Hyperliquid hourly funding for ``coin`` (bare,
     e.g. 'BTC') from a DuckDB connection and return the cross-venue APR frame.
 
     Binance native funding is slash-spelled (``BTC/USDT``); HL is bare (``BTC``).
     ``align_cross_venue`` normalizes both to bare before the as-of join. Read-only.
+    ``binance_view`` / ``hl_view`` default to the major views; pass the Boucle-β
+    spellings (``binance_tail_funding_native`` / ``hyperliquid_exotic_funding_1h``) for
+    a coin listed on both the Binance tail and the HL exotic universe.
     """
     binance = con.execute(
-        "SELECT ts, funding_rate, symbol FROM binance_funding_native "
+        f"SELECT ts, funding_rate, symbol FROM {binance_view} "
         f"WHERE symbol = '{coin}/USDT'"
     ).df()
     hl = con.execute(
-        "SELECT ts, funding_rate, symbol FROM hyperliquid_funding_1h "
+        f"SELECT ts, funding_rate, symbol FROM {hl_view} "
         f"WHERE symbol = '{coin}'"
     ).df()
     return align_cross_venue(binance, hl, binance_interval_hours=binance_interval_hours)

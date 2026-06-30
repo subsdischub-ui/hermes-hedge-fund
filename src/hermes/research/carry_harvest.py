@@ -211,30 +211,55 @@ def regime_split(book_ret: np.ndarray, funding_sign: np.ndarray) -> dict:
 # =========================================================================== #
 # lake loaders — per-coin streams (read-only)
 # =========================================================================== #
-def _native_funding_raw(con, symbol_slash: str) -> tuple[np.ndarray, np.ndarray]:
+def _native_funding_raw(
+    con, symbol_slash: str, *, view: str = "binance_funding_native"
+) -> tuple[np.ndarray, np.ndarray]:
     df = con.execute(
-        "SELECT ts, funding_rate FROM binance_funding_native "
+        f"SELECT ts, funding_rate FROM {view} "
         "WHERE symbol = ? ORDER BY ts",
         [symbol_slash],
     ).df()
     return df["ts"].to_numpy(), df["funding_rate"].to_numpy(dtype=float)
 
 
-def cash_and_carry_stream(con, symbol_slash: str) -> pd.DataFrame:
+def cash_and_carry_stream(
+    con,
+    symbol_slash: str,
+    *,
+    spot_view: str = "binance_spot_klines_4h",
+    perp_view: str = "binance_funding_on_4h",
+    native_view: str = "binance_funding_native",
+) -> pd.DataFrame:
     """Per-coin CC stream on the 4h grid: ``[ts, basis_ret, funding]``.
 
     ``basis_ret = spot_ret - perp_ret`` (delta-neutral residual, reused from carry_join);
     ``funding`` = native settlements attributed once each onto the grid (NO double-count).
+    The view names default to the 23-major spellings; pass the Boucle-β tail spellings
+    (``binance_tail_spot_klines_4h`` / ``binance_tail_funding_on_4h`` /
+    ``binance_tail_funding_native``) to run the harvest on the illiquid tail unchanged.
     """
-    aligned = cj.carry_returns(cj.cash_and_carry_from_lake(con, symbol=symbol_slash))
+    aligned = cj.carry_returns(
+        cj.cash_and_carry_from_lake(
+            con, symbol=symbol_slash, spot_view=spot_view, perp_view=perp_view
+        )
+    )
     grid_ts = aligned["ts"].to_numpy()
-    n_ts, n_rate = _native_funding_raw(con, symbol_slash)
+    n_ts, n_rate = _native_funding_raw(con, symbol_slash, view=native_view)
     funding = attribute_funding(grid_ts, n_ts, n_rate)
     basis_ret = (aligned["spot_ret"] - aligned["perp_ret"]).fillna(0.0).to_numpy()
     return pd.DataFrame({"ts": grid_ts, "basis_ret": basis_ret, "funding": funding})
 
 
-def cross_venue_stream(con, coin_bare: str, *, binance_interval_hours: float = 8.0) -> pd.DataFrame:
+def cross_venue_stream(
+    con,
+    coin_bare: str,
+    *,
+    binance_interval_hours: float = 8.0,
+    hl_klines_view: str = "hyperliquid_klines",
+    binance_perp_view: str = "binance_funding_on_4h",
+    binance_native_view: str = "binance_funding_native",
+    hl_funding_view: str = "hyperliquid_funding_1h",
+) -> pd.DataFrame:
     """Per-coin XV stream on the HL 4h klines grid: ``[ts, basis_ret, funding]``.
 
     Position: SHORT Binance perp + LONG HL perp. ``basis_ret`` = the inter-venue price
@@ -242,13 +267,17 @@ def cross_venue_stream(con, coin_bare: str, *, binance_interval_hours: float = 8
     = per-bar harvested differential = Binance funding received minus HL funding paid,
     attributed from each venue's native settlements (Binance native 8h; HL hourly), bucketed
     once onto the shared grid. Window is bounded by HL klines depth (~2024-03 on).
+    The view names default to the major spellings; pass the Boucle-β exotic spellings
+    (``hyperliquid_exotic_klines`` / ``binance_tail_funding_on_4h`` /
+    ``binance_tail_funding_native`` / ``hyperliquid_exotic_funding_1h``) for a tail coin
+    listed on both venues.
     """
     hlk = con.execute(
-        "SELECT ts, close FROM hyperliquid_klines WHERE symbol = ? ORDER BY ts",
+        f"SELECT ts, close FROM {hl_klines_view} WHERE symbol = ? ORDER BY ts",
         [coin_bare],
     ).df()
     bperp = con.execute(
-        "SELECT ts, close FROM binance_funding_on_4h WHERE symbol = ? ORDER BY ts",
+        f"SELECT ts, close FROM {binance_perp_view} WHERE symbol = ? ORDER BY ts",
         [f"{coin_bare}/USDT"],
     ).df()
     grid = hlk.merge(bperp, on="ts", how="inner", suffixes=("_hl", "_bz")).sort_values("ts")
@@ -257,9 +286,9 @@ def cross_venue_stream(con, coin_bare: str, *, binance_interval_hours: float = 8
     bz_ret = grid["close_bz"].pct_change(fill_method=None).fillna(0.0).to_numpy()
     basis_ret = hl_ret - bz_ret
 
-    bz_ts, bz_rate = _native_funding_raw(con, f"{coin_bare}/USDT")
+    bz_ts, bz_rate = _native_funding_raw(con, f"{coin_bare}/USDT", view=binance_native_view)
     hl = con.execute(
-        "SELECT ts, funding_rate FROM hyperliquid_funding_1h WHERE symbol = ? ORDER BY ts",
+        f"SELECT ts, funding_rate FROM {hl_funding_view} WHERE symbol = ? ORDER BY ts",
         [coin_bare],
     ).df()
     binance_recv = attribute_funding(grid_ts, bz_ts, bz_rate)            # short Binance -> receive
