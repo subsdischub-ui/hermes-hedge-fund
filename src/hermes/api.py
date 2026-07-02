@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -53,14 +54,22 @@ partiellement, même pour paraître plus complet. Une réponse honnête et incom
 qu'une réponse plausible et fabriquée. C'est nous qui le découvrons à chaque fois — ne nous y refais \
 pas prendre.
 
-TES 3 STRATÉGIES (toutes validées hors-échantillon, SÉLECTIVES — elles ne tradent QUE quand \
-leur jauge est armée, sinon elles attendent par discipline) :
-- #1 Momentum sélectif (ts_mom |score|>=1.0, long/short, ~48h) : trade les tendances établies.
-- #2 Funding squeeze (funding z>=2, long ~96h) : continuation sur funding extrême, orthogonale à #1.
+TON SLATE LIVE ACTUEL (RESTRUCTURATION 2026-07-02 — toutes SÉLECTIVES, elles ne tradent QUE \
+quand leur jauge est armée, sinon elles attendent par discipline) :
+- #1 Mean reversion (régime) : range mean-reversion, skill DISTINCT (jamais concerné par le \
+retrait de S1 ci-dessous).
+- #2 Funding squeeze (funding z>=2, long ~96h) : continuation sur funding extrême, orthogonale à #1 \
+— le SEUL edge validé du livre (joint-null p=0.017).
 - #3 Funding carry delta-neutral (short perp + long spot, funding>=2bps, ~8j) : récolte le carry \
 en marché calme, market-neutral ; ne trade JAMAIS à nu (prouvé perdant sur 9 ans).
-PHILOSOPHIE : discipline > agitation. Forcer des trades dans le bruit détruit l'edge. La \
-croissance vient de la patience, de l'orthogonalité, et (plus tard, après les gates) du levier."""
+RETIRÉ DU SLATE (2026-07-02) : l'ex-Strategy #1 momentum (ts_mom_vol_scaled, |score|>=1.0) — \
+mesuré comme un drag bull-beta (book LOO-Δ Sharpe -0.146, joint-null p=0.69 : indiscernable d'une \
+entrée aléatoire). Le contexte ci-dessous détaille les chiffres et le nouveau gate \
+(edge_paper_trades) — utilise-les si on te pose la question, ne les improvise jamais.
+PHILOSOPHIE : discipline > agitation. Forcer des trades dans le bruit détruit l'edge. Un livre à \
+événements rares (ex: #2 ~13 évts/an) qui reste calme des semaines est une PROTECTION du capital, \
+pas une panne. La croissance vient de la patience, de l'orthogonalité, et (plus tard, après les \
+gates) du levier."""
 
 
 @asynccontextmanager
@@ -202,6 +211,9 @@ async def dashboard_data() -> dict[str, Any]:
         "activity": _recent_activity(s),
         "equity_curve": _equity_curve(all_closed, s.bankroll_usd, equity),
         "strategies": _strategies_ab(all_closed, positions),
+        "forward": _forward_status(s),
+        "governance": _governance_status(),
+        "restructuration": _restructuration_status(s, edge_count),
         "server_time": datetime.now(UTC).isoformat(),
     }
 
@@ -213,10 +225,136 @@ def _recent_activity(s, n: int = 30) -> list[dict]:
     return ActivityLog(s.data_dir / "activity.json").recent(n)
 
 
+# Forward-collection flux names surfaced on the dashboard, mapped to the log name each
+# collector writes under (see hermes.forward.run.default_collector_names / _*_collector).
+# Kept as a plain dict (not the cron's own list) so the dashboard never depends on
+# import-time network seams in hermes.forward.run.
+_FORWARD_FLUX_LOGS = {
+    "top_lsr": "top_lsr",
+    "skew": "skew",
+    "comex_curve": "comex_curve",
+    "comex_spreads": "comex_spreads",
+    "macro_dot_vs_ff": "macro_dot_vs_ff",
+    "funding_squeeze": "shadow/funding_squeeze_continuation",
+    "xs_reversion": "shadow/xs_funding_reversion",
+}
+
+
+def _forward_status(s) -> dict[str, dict]:
+    """Fail-soft per-flux status of the forward/ collection logs.
+
+    Reads ``{HERMES_DATA_DIR}/forward/<flux>/log.parquet`` via the same resolver the
+    cron writes through (``hermes.forward.logio``). A flux with no log yet (fresh
+    local checkout — production has these under ``/data/forward``) reports
+    ``status: "no_data"`` instead of raising. top_lsr additionally breaks its row
+    count down per symbol since it is the flux the restructuration named explicitly
+    (18 (symbol, ratio_type) pairs across 7 live crypto perps + XAU/XAG)."""
+    from hermes.forward import logio
+
+    out: dict[str, dict] = {}
+    for flux, log_name in _FORWARD_FLUX_LOGS.items():
+        try:
+            df = logio.read_log(log_name, data_dir=s.data_dir)
+        except Exception as e:  # never let a corrupt/partial parquet break the dashboard
+            out[flux] = {"status": "error", "error": str(e)}
+            continue
+        if df is None or df.empty:
+            out[flux] = {"status": "no_data", "rows": 0}
+            continue
+        last_ts = None
+        if "ts" in df.columns:
+            try:
+                last_ts = datetime.fromtimestamp(
+                    float(df["ts"].max()) / 1000.0, tz=UTC
+                ).isoformat()
+            except Exception:
+                last_ts = None
+        entry: dict[str, Any] = {
+            "status": "collecting",
+            "rows": len(df),
+            "last_ts": last_ts,
+        }
+        if flux == "top_lsr" and "symbol" in df.columns:
+            with contextlib.suppress(Exception):
+                entry["by_symbol"] = {
+                    str(sym): int(n) for sym, n in df["symbol"].value_counts().items()
+                }
+        out[flux] = entry
+    return out
+
+
+def _governance_status() -> dict[str, Any]:
+    """Fail-soft governance snapshot: trial-registry counts (deflation truth) plus the
+    informative DeadEndsLedger verdict for every pre-registration. Both sources are
+    already fail-soft internally, but this wraps them again defensively so a
+    dashboard render can never 500 on a missing/corrupt governance file."""
+    out: dict[str, Any] = {"trials_by_book": {"status": "no_data"}, "dead_ends_verdicts": {}}
+    try:
+        from hermes.research import s10_governance as gov
+
+        reg = gov.BookTrialRegistry()
+        out["trials_by_book"] = reg.as_dict()
+    except Exception as e:
+        out["trials_by_book"] = {"status": "no_data", "error": str(e)}
+    try:
+        from hermes.forward import prereg
+
+        out["dead_ends_verdicts"] = prereg.dead_ends_verdicts()
+    except Exception as e:
+        out["dead_ends_verdicts"] = {"status": "no_data", "error": str(e)}
+    return out
+
+
+def _restructuration_status(s, edge_paper_trades_observed: int) -> dict[str, Any]:
+    """Structured facts from the 2026-07-02 restructuration (docs/RESTRUCTURATION_2026-07.md)
+    so the dashboard and the chat share one source of the same numbers. Sourced from
+    the live config where possible (slate, gate target) rather than re-hardcoding
+    values that config already owns; the historical/dated facts (LOO-Δ, deadlines)
+    are not runtime-computed anywhere, so they are recorded here verbatim from the
+    dossier — fail-soft to a static fallback if the config read ever breaks."""
+    try:
+        slate = list(s.yaml("strategy", "allowed_skills") or [])
+    except Exception:
+        slate = []
+    try:
+        gate_target = s.yaml("stages", "stage_0_paper", "advance_when", "edge_paper_trades")
+        gate_target = int(gate_target) if gate_target is not None else 40
+    except Exception:
+        gate_target = 40
+    return {
+        "slate": slate,
+        "retired": [
+            {"skill_id": "ts_mom_vol_scaled", "loo_delta_sharpe": -0.146, "joint_null_p": 0.69},
+        ],
+        "gate": {
+            "edge_paper_trades_target": gate_target,
+            "edge_paper_trades_observed": edge_paper_trades_observed,
+        },
+        "metals_collect_now": {
+            "symbols": ["XAUUSDT", "XAGUSDT"],
+            "retest_deadline": "2027-07-02",
+            "kill_rule": "n<30 événements ou aucun bear couvert → axe mort",
+        },
+        "fx": {"status": "fermé", "reopen_check": "2027-07-02"},
+        "global_cutoff": "2028-01-02",
+        "dossier": "docs/RESTRUCTURATION_2026-07.md",
+    }
+
+
 # Strategy attribution: which skill belongs to which live/research strategy.
-_STRAT1_SKILLS = {
-    "ts_mom_vol_scaled", "breakout_vol_expansion", "mean_reversion_regime",
-    "intraday_tod_btc", "trend_follow_ema", "mean_reversion_atr",  # incl. legacy history
+# RESTRUCTURATION 2026-07-02 (docs/RESTRUCTURATION_2026-07.md §3): ts_mom_vol_scaled
+# ("Strategy #1 momentum") was RETIRED from config strategy.allowed_skills (bull-beta
+# drag: book LOO-Δ Sharpe -0.146, joint-null p=0.69). mean_reversion_regime is a
+# DISTINCT skill built on a different signal (never part of the S1 audit sleeve) and
+# stays live. Before this fix both were folded into one "Strategy 1 (Momentum)" card,
+# which would have shown future mean_reversion_regime trades as if they belonged to a
+# retired strategy — _STRAT1_SKILLS now names ONLY the live skill; every retired/legacy
+# skill moves to _RETIRED_SKILLS so the 7 historical trades stay visible but correctly
+# attributed as history, not as an active strategy card.
+_STRAT1_SKILLS = {"mean_reversion_regime"}  # live: Strategy 1 = mean reversion (régime)
+_RETIRED_SKILLS = {
+    "ts_mom_vol_scaled", "breakout_vol_expansion",
+    "intraday_tod_btc", "trend_follow_ema", "mean_reversion_atr",
 }
 _STRAT2_SKILLS = {
     "funding_squeeze_continuation",  # the validated, live Strategy #2
@@ -254,14 +392,17 @@ def _strategy_stats(rows) -> dict:
 def _strategies_ab(closed_rows, open_positions=None) -> dict:
     """Side-by-side A/B of the three sleeves: each shows its live (closed) trades plus
     an honest research/status line. Strategy #3 (carry) flips to live the moment a
-    delta-neutral pair is OPEN, even before the first one closes."""
+    delta-neutral pair is OPEN, even before the first one closes. Retired/legacy
+    skills (ts_mom_vol_scaled and pre-2026-07 history) are reported separately so they
+    never conflate with the still-live mean_reversion_regime sleeve."""
     s1 = [r for r in closed_rows if (r.skill_id or "") in _STRAT1_SKILLS]
     s2 = [r for r in closed_rows if (r.skill_id or "") in _STRAT2_SKILLS]
     s3 = [r for r in closed_rows if (r.skill_id or "") in _STRAT3_SKILLS]
+    retired = [r for r in closed_rows if (r.skill_id or "") in _RETIRED_SKILLS]
     carry_open = any((getattr(p, "skill_id", "") or "") in _STRAT3_SKILLS for p in (open_positions or []))
     return {
         "strategy_1": {
-            "label": "Momentum (selective)",
+            "label": "Mean reversion (régime)",
             "status": "live",
             "live": _strategy_stats(s1),
         },
@@ -299,6 +440,20 @@ def _strategies_ab(closed_rows, open_positions=None) -> dict:
                         "(a 9y test proved naked is OOS-negative). Real-money cross-venue leg pending.",
             },
         },
+        "retired_skills": {
+            "label": "Skills retirés (historique)",
+            "status": "retired",
+            "live": _strategy_stats(retired),
+            "skills": sorted(_RETIRED_SKILLS),
+            "research": {
+                "note": "ts_mom_vol_scaled (ex-Strategy #1 momentum) retiré le 2026-07-02 : "
+                        "book LOO-Δ Sharpe -0.146 (le livre double son Sharpe sans lui), "
+                        "joint-null p=0.69 (son panier de trades est indiscernable d'une entrée "
+                        "aléatoire). Les trades historiques ci-dessus (incl. legacy "
+                        "breakout/trend/mean_reversion_atr) restent visibles mais n'arment plus "
+                        "aucun signal futur — voir docs/RESTRUCTURATION_2026-07.md §3.",
+            },
+        },
     }
 
 
@@ -324,6 +479,8 @@ async def _chat_context() -> str:
         stats = await journal.stats()
         closed = await journal.recent_closed(since=datetime.now(UTC) - timedelta(days=365))
         ab = _strategies_ab(closed, positions)
+        allowed = s.yaml("strategy", "allowed_skills") or []
+        edge_count = await journal.count_closed_by_skills(allowed)
     except Exception as e:  # never let a context hiccup break the chat
         return f"(état partiellement indisponible: {e})"
 
@@ -370,7 +527,46 @@ async def _chat_context() -> str:
         f"{chr(10).join(trade_lines) or '  (aucun trade clos pour le moment)'}\n"
         f"- Stratégies:\n{strat}\n"
         f"- Positions ouvertes: {pos}\n"
-        f"- Ce que chaque sleeve voit maintenant:\n{chr(10).join(gauges) or '  (pas de pulse récent)'}"
+        f"- Ce que chaque sleeve voit maintenant:\n{chr(10).join(gauges) or '  (pas de pulse récent)'}\n"
+        f"{_restructuration_chat_block(s, edge_count)}"
+    )
+
+
+def _restructuration_chat_block(s, edge_count: int) -> str:
+    """Compact restructuration + collecte forward block for the chat context — same
+    facts as /dashboard/data's `restructuration`/`forward` blocks, condensed to key
+    numbers only (token budget). Lets the agent answer 'quel est ton slate et
+    pourquoi S1 a été retiré ?', 'où en est la collecte or/argent/top_lsr ?', 'c'est
+    quoi le gate maintenant ?', 'pourquoi si peu de trades ?' (réponse: slate
+    rare-événements = protection, pas panne)."""
+    r = _restructuration_status(s, edge_count)
+    fwd = _forward_status(s)
+    top_lsr = fwd.get("top_lsr", {})
+    by_sym = top_lsr.get("by_symbol") or {}
+    top_lsr_line = (
+        f"top_lsr {top_lsr.get('status')}, {top_lsr.get('rows', 0)} lignes"
+        + (f" ({', '.join(f'{k}:{v}' for k, v in sorted(by_sym.items()))})" if by_sym else "")
+    )
+    skew = fwd.get("skew", {})
+    skew_line = f"skew {skew.get('status')}, {skew.get('rows', 0)} lignes"
+    retired = r["retired"][0]
+    gate = r["gate"]
+    return (
+        "- RESTRUCTURATION 2026-07-02 (docs/RESTRUCTURATION_2026-07.md — source de vérité):\n"
+        f"  - Slate live actuel: {', '.join(r['slate']) or '(vide)'}\n"
+        f"  - Retiré: {retired['skill_id']} (ex-Strategy #1 momentum) — book LOO-Δ Sharpe "
+        f"{retired['loo_delta_sharpe']} (le livre double son Sharpe sans lui), joint-null p="
+        f"{retired['joint_null_p']} (panier indiscernable d'une entrée aléatoire). "
+        f"mean_reversion_regime reste (skill distinct, non concerné).\n"
+        f"  - Gate stage_0: edge_paper_trades {gate['edge_paper_trades_observed']}/"
+        f"{gate['edge_paper_trades_target']} (compte SEULEMENT les trades du slate actuel — "
+        f"un livre à événements rares prend des années par construction ; peu de trades = "
+        f"protection du capital, pas une panne).\n"
+        f"  - Collecte forward: {top_lsr_line} ; {skew_line}.\n"
+        f"  - Métaux (XAU/XAG) : collect-now, "
+        f"re-test {r['metals_collect_now']['retest_deadline']} (couperet: {r['metals_collect_now']['kill_rule']}).\n"
+        f"  - FX : {r['fx']['status']}, réouverture vérifiée {r['fx']['reopen_check']}.\n"
+        f"  - Couperet global du narratif « revenu par trading » : {r['global_cutoff']}."
     )
 
 
@@ -485,6 +681,8 @@ _DASHBOARD_HTML = """<!doctype html>
   <div class="card" style="grid-column:1/-1"><h2>Open positions</h2><div id="positions"></div></div>
   <div class="card" style="grid-column:1/-1"><h2>Equity curve (paper, realised)</h2><div id="eqchart"></div></div>
   <div class="card" style="grid-column:1/-1"><h2>Strategies — A/B (side by side)</h2><div id="ab"></div></div>
+  <div class="card" style="grid-column:1/-1;border-color:#3a4a6a">
+    <h2>Restructuration &amp; collecte forward (2026-07-02)</h2><div id="restructuration"></div></div>
   <div class="card" style="grid-column:1/-1">
     <h2>Agent activity (live — ticks &amp; hourly pulses)</h2>
     <div style="margin-bottom:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
@@ -538,10 +736,15 @@ function renderLive(d){
   const syms=(d.universe||[]).filter(s=>bySym[s]);
   if(!syms.length){ el.innerHTML=head+'<div class="muted">no pulse logged yet — waiting for the next heartbeat</div>'; return; }
   const gbar=g=>{ const pct=Math.max(4,Math.min(100,100*(Number(g.val)/(g.thr||1))));
-    const col=g.armed?'#a6e3a1':(g.status?'#cba6f7':'#89b4fa');
-    const tag=g.status?`<span class="pill off">${esc(g.status)}</span>`
-      :(g.armed?'<span class="pill ok">ARMED</span>':'<span class="pill off">holding</span>');
-    return `<div style="margin:6px 0"><div class="sub">${esc(g.sleeve)} — ${esc(g.metric)} <b>${f(g.val,2)}</b> / ${f(g.thr,2)} `
+    // Retired gauges (e.g. Momentum #1 / ts_mom_vol_scaled, dropped from allowed_skills
+    // 2026-07-02) still compute + display what they SEE, but can never arm — render
+    // them muted/dead instead of a live ARMED-capable bar so they aren't mistaken for
+    // an active strategy.
+    const col=g.retired?'#3a4258':(g.armed?'#a6e3a1':(g.status?'#cba6f7':'#89b4fa'));
+    const tag=g.retired?`<span class="pill off">retiré</span>`
+      :(g.status?`<span class="pill off">${esc(g.status)}</span>`
+      :(g.armed?'<span class="pill ok">ARMED</span>':'<span class="pill off">holding</span>'));
+    return `<div style="margin:6px 0${g.retired?';opacity:.55':''}"><div class="sub">${esc(g.sleeve)} — ${esc(g.metric)} <b>${f(g.val,2)}</b> / ${f(g.thr,2)} `
       +tag+`</div>`
       +`<div class="bar"><i style="width:${pct}%;background:${col}"></i></div></div>`; };
   el.innerHTML=head+`<div style="display:flex;gap:16px;flex-wrap:wrap">`
@@ -578,17 +781,54 @@ function renderAB(st){
   const card=s=>{ if(!s) return '';
     const L=s.live||{};
     const badge=s.status==='live'?'<span class="pill ok">live</span>':`<span class="pill off">${esc(s.status||'research')}</span>`;
-    let h=`<div style="flex:1;min-width:260px"><div style="font-weight:600;color:#fff;margin-bottom:6px">${esc(s.label)} ${badge}</div>`
-      +`<table><tr><th>live trades</th><td>${L.n||0}</td></tr>`
-      +`<tr><th>live win</th><td>${L.win_rate==null?'—':(100*L.win_rate).toFixed(0)+'%'}</td></tr>`
-      +`<tr><th>live PnL</th><td class="${cls(L.pnl_usd)}">$${f(L.pnl_usd,3)}</td></tr></table>`;
+    let h=`<div style="flex:1;min-width:260px${s.status==='retired'?';opacity:.7':''}"><div style="font-weight:600;color:#fff;margin-bottom:6px">${esc(s.label)} ${badge}</div>`
+      +`<table><tr><th>${s.status==='retired'?'trades historiques':'live trades'}</th><td>${L.n||0}</td></tr>`
+      +`<tr><th>win</th><td>${L.win_rate==null?'—':(100*L.win_rate).toFixed(0)+'%'}</td></tr>`
+      +`<tr><th>PnL</th><td class="${cls(L.pnl_usd)}">$${f(L.pnl_usd,3)}</td></tr></table>`;
+    if(s.skills){ h+=`<div class="sub" style="margin-top:4px">${s.skills.map(esc).join(', ')}</div>`; }
     if(s.research){ const r=s.research;
-      h+=`<div class="sub" style="margin-top:6px">research: ${r.oos_validated_bricks||0} OOS-validated bricks / ${r.candidates_tested||0} tested`
-        +`<br><span class="muted">${esc(r.note||'')}</span></div>`; }
+      h+=`<div class="sub" style="margin-top:6px">`
+        +(r.oos_validated_bricks!=null?`research: ${r.oos_validated_bricks} OOS-validated bricks / ${r.candidates_tested||0} tested<br>`:'')
+        +`<span class="muted">${esc(r.note||'')}</span></div>`; }
     return h+`</div>`; };
   document.getElementById('ab').innerHTML=
     `<div style="display:flex;gap:20px;flex-wrap:wrap">`
-    +card(st.strategy_1)+card(st.strategy_2)+card(st.strategy_3)+`</div>`;
+    +card(st.strategy_1)+card(st.strategy_2)+card(st.strategy_3)+card(st.retired_skills)+`</div>`;
+}
+function renderRestructuration(d){
+  const el=document.getElementById('restructuration'); if(!el) return;
+  const r=d.restructuration||{}, fwd=d.forward||{}, gov=d.governance||{};
+  const fluxRow=(name,label)=>{ const x=fwd[name]||{};
+    const bySym=x.by_symbol?Object.entries(x.by_symbol).map(([k,v])=>`${esc(k)}:${v}`).join(' · '):'';
+    return `<tr><td>${esc(label)}</td><td class="muted">${esc(x.status||'no_data')}</td>`
+      +`<td>${x.rows||0}</td><td class="muted">${x.last_ts?ago(x.last_ts):'—'}${bySym?' · '+bySym:''}</td></tr>`; };
+  const gate=r.gate||{};
+  const gt=gate.edge_paper_trades_target||40, go=gate.edge_paper_trades_observed||0;
+  const gpct=Math.min(100,100*go/(gt||1));
+  const retired=(r.retired||[]).map(x=>`${esc(x.skill_id)} (LOO-Δ Sharpe ${f(x.loo_delta_sharpe,3)}, joint-null p=${f(x.joint_null_p,3)})`).join(', ');
+  el.innerHTML=
+    `<div style="display:flex;gap:20px;flex-wrap:wrap">`
+    +`<div style="flex:1;min-width:260px">`
+      +`<div class="sub" style="margin-bottom:6px"><b>Slate live</b>: ${(r.slate||[]).map(esc).join(', ')||'—'}</div>`
+      +`<div class="sub" style="margin-bottom:6px"><b>Retiré</b>: ${retired||'—'}</div>`
+      +`<div class="sub"><b>Gate stage_0</b>: edge_paper_trades ${go} / ${gt}</div>`
+      +`<div class="bar"><i style="width:${gpct}%;background:#89b4fa"></i></div>`
+    +`</div>`
+    +`<div style="flex:1;min-width:280px">`
+      +`<table><tr><th>flux forward</th><th>statut</th><th>lignes</th><th>dernier / détail</th></tr>`
+      +fluxRow('top_lsr','top_lsr')+fluxRow('skew','skew 25Δ')
+      +fluxRow('funding_squeeze','funding_squeeze shadow')+fluxRow('comex_curve','comex')
+      +`</table>`
+      +`<div class="sub" style="margin-top:6px">gouvernance: trials_by_book ${gov.trials_by_book&&gov.trials_by_book.counts?JSON.stringify(gov.trials_by_book.counts):'—'}</div>`
+    +`</div>`
+    +`<div style="flex:1;min-width:240px">`
+      +`<div class="sub" style="margin-bottom:6px"><b>Échéances</b></div>`
+      +`<div class="sub">Métaux (XAU/XAG) collect-now → re-test <b>${esc((r.metals_collect_now||{}).retest_deadline||'—')}</b></div>`
+      +`<div class="sub">FX ${esc((r.fx||{}).status||'—')} → vérif <b>${esc((r.fx||{}).reopen_check||'—')}</b></div>`
+      +`<div class="sub">Couperet global narratif « revenu » → <b>${esc(r.global_cutoff||'—')}</b></div>`
+      +`<div class="sub" style="margin-top:6px"><a href="/${esc(r.dossier||'')}">${esc(r.dossier||'')}</a></div>`
+    +`</div>`
+    +`</div>`;
 }
 function render(){
   const d=D; if(!d||!d.server_time) return;
@@ -615,6 +855,7 @@ function render(){
   renderShadow(d);
   renderEq(d.equity_curve);
   renderAB(d.strategies||{});
+  renderRestructuration(d);
   const ps=d.open_positions||[];
   document.getElementById('positions').innerHTML=ps.length?
     `<table><tr><th>symbol</th><th>qty</th><th>entry</th><th>uPnL</th><th>stop</th><th>tp</th><th>skill</th></tr>`

@@ -88,3 +88,25 @@ def test_chat_page_is_served():
         r = c.get("/chat")
         assert r.status_code == 200
         assert "Hermès" in r.text
+
+
+@pytest.mark.asyncio
+async def test_chat_context_carries_restructuration_facts():
+    """The chat must be able to answer 'quel est ton slate et pourquoi S1 a été
+    retiré ?', 'où en est la collecte or/argent/top_lsr ?', 'c'est quoi le gate
+    maintenant ?' — so the compact restructuration block (slate, retrait S1 +
+    chiffres, gate, échéances datées) must reach the LLM context verbatim."""
+    from hermes.api import _chat_context
+
+    ctx = await _chat_context()
+    # Current slate + the retirement, with its numbers (not just a bare claim).
+    assert "mean_reversion_regime" in ctx
+    assert "funding_squeeze_continuation" in ctx
+    assert "ts_mom_vol_scaled" in ctx
+    assert "0.146" in ctx  # LOO-Δ Sharpe
+    assert "0.69" in ctx or "0.693" in ctx  # joint-null p
+    # The gate, so it can answer "c'est quoi le gate maintenant ?"
+    assert "edge_paper_trades" in ctx or "40" in ctx
+    # Dated deadlines for metals/FX/global cutoff.
+    assert "2027-07-02" in ctx
+    assert "2028-01-02" in ctx

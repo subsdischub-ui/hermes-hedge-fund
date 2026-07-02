@@ -37,9 +37,18 @@ def pulse_entry(
     gauges = []
     for s in signals:
         if s.skill_id == "ts_mom_vol_scaled":
+            # RESTRUCTURATION 2026-07-02: ts_mom_vol_scaled was retired from
+            # strategy.allowed_skills (bull-beta drag, book LOO-Δ Sharpe -0.146,
+            # joint-null p=0.69 — docs/RESTRUCTURATION_2026-07.md §3). The skill
+            # library still computes this signal (so the gauge keeps showing what
+            # it SEES for transparency), but selective_gate now rejects it
+            # unconditionally — it can NEVER win would_act. Force armed=False and
+            # flag `retired` so the dashboard renders this as a dead gauge instead
+            # of implying it could still fire.
             v = round(float(s.confidence), 2)
             gauges.append({"sleeve": "Momentum #1", "metric": "conviction",
-                           "val": v, "thr": 1.0, "armed": v >= 1.0})
+                           "val": v, "thr": 1.0, "armed": False, "retired": True,
+                           "status": "retired (hors slate depuis 2026-07-02)"})
         elif s.skill_id == "funding_squeeze_continuation":
             fz = round(float(s.features.get("funding_z", 0.0)), 2)
             gauges.append({"sleeve": "Funding #2", "metric": "funding z",

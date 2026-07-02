@@ -62,3 +62,19 @@ def test_pulse_entry_emits_live_gauges_for_both_sleeves_even_when_holding():
     assert g["Momentum #1"]["armed"] is False
     assert g["Funding #2"]["val"] == 0.8 and g["Funding #2"]["thr"] == 2.0
     assert g["Funding #2"]["armed"] is False
+
+
+def test_pulse_entry_momentum_gauge_is_flagged_retired_and_never_armed():
+    """RESTRUCTURATION 2026-07-02: ts_mom_vol_scaled was retired from
+    strategy.allowed_skills (bull-beta drag, LOO-Δ Sharpe -0.146). The skill library
+    still computes its signal (so the gauge keeps showing what it SEES), but
+    selective_gate rejects it unconditionally now — so the gauge must never render
+    as ARMED/actionable even at saturated conviction, and must carry a `retired`
+    flag so the dashboard can render it as a dead gauge instead of a live one."""
+    sigs = [_sig("ts_mom_vol_scaled", "BUY", 5.0)]  # far above the old 1.0 threshold
+    e = pulse_entry("BTC/USDC", {"regime": "trend_up", "efficiency_ratio": 0.7}, sigs, set(), CFG)
+    g = {x["sleeve"]: x for x in e["gauges"]}
+    assert g["Momentum #1"]["armed"] is False
+    assert g["Momentum #1"]["retired"] is True
+    # And it can never win would_act even though CFG still lists it in allowed_skills
+    # for this unit test's fixture — the real live config no longer does.
