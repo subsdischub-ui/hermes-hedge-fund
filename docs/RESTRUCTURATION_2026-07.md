@@ -333,3 +333,30 @@ largeur était le levier le plus court et il vient d'être testé — il ne pass
 lettre aujourd'hui. Le flux du livre reste celui du slate validé. La variable dominante du
 revenu reste le capital, pas le signal ; le chemin par paliers ($100 paper → gates → réel)
 reste le seul qui ne scale pas du bruit.
+
+---
+
+## Addendum 2 — 2026-07-02, nuit : le lake payé, l'inventaire manquant, et deux axes ouverts
+
+**Correction opérateur (fondée) :** l'abonnement CoinGlass Hobbyist (~$34/mois, CONFIRMÉ ACTIF)
+et le data lake S0 (2026-06-29, 94 datasets, 1.4M lignes, `data/raw/` + manifeste) existaient —
+et ce dossier a été écrit sans les inventorier. Statuts corrigés en conséquence :
+- **top_lsr : le statut « collect-now, re-gate ≥2027-07 » (§6) est PÉRIMÉ.** Le Stream 2 a testé
+  le contrarian top-LSR sur l'historique complet du lake (6 ans) et l'a ENTERRÉ (ledger #25 :
+  full-history ρ≈0, signe qui flippe bull↔bear, « NEVER re-run continuous top-LSR »). Le
+  collecteur quotidien câblé ce jour reste utile : continuation PIT du lake + la porte
+  « axe intraday » laissée ouverte par la revive_condition. La piste largeur S2 est close
+  (décision opérateur — pas de test durci survivorship).
+- **Carte lake-vs-ledger (doublement auditée)** : sur tout le lake payé, DEUX axes sont
+  réellement non-adjugés — des trous d'exécution du mandat S2 (listés en input, jamais chargés
+  par le code, zéro entrée ledger) :
+  1. `global_lsr_account` — le positionnement retail AGRÉGÉ (distinct du top-trader tué) ;
+     2 079 barres 1d depuis 2020-10 sur BTC/ETH/SOL/AVAX, cross-régime complet.
+     → Test pré-enregistré lancé (research_toplsr/PREREG_global_lsr.md, registre bumpé).
+  2. `taker_volume` perp par-exchange — 2 484 barres 1d BTC depuis 2019-09 ; PRÉ-CONDITION
+     avant tout test : prouver qu'il n'est pas le momentum-prix déguisé (le spot-OFI est mort
+     pour ρ 0.77-0.96 vs momentum, kill #18) — écran de disqualification en cours.
+- **Leçon de gouvernance** : le verdict DeadEndsLedger câblé ce matin a fonctionné — il a
+  bloqué une re-proposition du top-LSR mort à quelques minutes du lancement. Et la nouvelle
+  règle mémoire est posée : AVANT toute proposition d'achat/collecte, inventorier
+  `data/manifest/DATA_MANIFEST.md` + `data/raw/` + le jumeau hermes-s0-alpha.
