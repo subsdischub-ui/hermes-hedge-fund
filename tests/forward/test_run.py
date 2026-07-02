@@ -82,5 +82,29 @@ def test_default_collectors_gate_xs_reversion_off_by_default():
     assert "funding_squeeze_shadow" in names_off  # the live edge always accrues
     assert "xs_reversion_shadow" not in names_off  # fragile → not wired by default
     assert "xs_reversion_shadow" in names_on  # but activation is a one-flag change
-    for flux in ("skew", "comex", "macro"):
+    for flux in ("skew", "comex", "macro", "top_lsr"):
         assert flux in names_off
+
+
+def test_cli_main_manifest_includes_dead_ends_check(tmp_path, monkeypatch, capsys):
+    """S10's DeadEndsLedger.check() existed but nothing in prod ever called it. main()
+    must now print an informative-only verdict per pre-registration in the manifest —
+    and a missing/corrupt ledger must never crash the cron (graceful fallback to the
+    module's own defaults, exercised separately in test_prereg.py)."""
+    import json
+
+    monkeypatch.setenv("HERMES_GOVERNANCE_DIR", str(tmp_path / "registry"))
+    monkeypatch.setattr(sys, "argv", ["run.py", "--data-dir", str(tmp_path / "forward_logs")])
+    run.main()
+    printed = capsys.readouterr().out
+    manifest = json.loads(printed)
+    assert "dead_ends_check" in manifest
+    from hermes.forward import prereg
+
+    assert set(manifest["dead_ends_check"]) == {pr.name for pr in prereg.ALL}
+    for v in manifest["dead_ends_check"].values():
+        assert v["verdict"] in {
+            gov.LedgerVerdict.BLOCKED.value,
+            gov.LedgerVerdict.ALLOWED_NEW_AXIS.value,
+            gov.LedgerVerdict.NOT_A_DEAD_END.value,
+        }

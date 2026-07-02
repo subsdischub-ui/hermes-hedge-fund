@@ -5,9 +5,13 @@ write-only on ``<data_dir>/forward/<flux>/``; a failure in one flux is recorded 
 never aborts the others; a same-day re-run overwrites that day's rows (idempotent).
 
 Flux:
-  * skew   — Deribit 25Δ skew (reuses the S4 surface-snapshot transform);
-  * comex  — COMEX dated-contract curve → PIT calendar spreads;
-  * macro  — SEP dot-plot vs Fed-Funds-futures gap.
+  * skew    — Deribit 25Δ skew (reuses the S4 surface-snapshot transform);
+  * comex   — COMEX dated-contract curve → PIT calendar spreads;
+  * macro   — SEP dot-plot vs Fed-Funds-futures gap;
+  * top_lsr — Binance top-trader long/short-ratio (account + position), pure PIT
+              accrual against the ~30-day rolling retention wall — NOT a signal (the
+              DeadEndsLedger killed the directional top-LSR contrarian use; see
+              collect_top_lsr module docstring).
 Shadow size-0 sleeves:
   * funding_squeeze_shadow — the LIVE edge, always accrues (clean bear/range OOS);
   * xs_reversion_shadow    — GATED OFF by default (fragile in-sample; one flag to wire).
@@ -28,6 +32,7 @@ from hermes.forward import (
     collect_comex,
     collect_macro,
     collect_skew,
+    collect_top_lsr,
     logio,
 )
 from hermes.forward import (
@@ -44,7 +49,7 @@ WIRE_XS_REVERSION = False
 
 
 def default_collector_names(*, wire_xs_reversion: bool = WIRE_XS_REVERSION) -> list[str]:
-    names = ["skew", "comex", "macro", "funding_squeeze_shadow"]
+    names = ["skew", "comex", "macro", "top_lsr", "funding_squeeze_shadow"]
     if wire_xs_reversion:
         names.append("xs_reversion_shadow")
     return names
@@ -123,6 +128,18 @@ def _macro_collector(now_ms):
     return c
 
 
+def _top_lsr_collector(now_ms):  # pragma: no cover - network seam (default fetcher hits Binance)
+    def c():
+        res = collect_top_lsr.collect()  # default fetcher is the live public Binance seam
+        return {
+            "logs": [("top_lsr", res["rows"], ("symbol", "ratio_type"), "ts")],
+            "blockers": res["blockers"],
+        }
+
+    c.flux_name = "top_lsr"
+    return c
+
+
 def _funding_squeeze_collector(now_ms):
     def c():
         frames = fetch_live_frames()
@@ -173,6 +190,7 @@ def _default_collectors(now_ms, *, wire_xs_reversion: bool):
         "skew": _skew_collector(now_ms),
         "comex": _comex_collector(now_ms),
         "macro": _macro_collector(now_ms),
+        "top_lsr": _top_lsr_collector(now_ms),
         "funding_squeeze_shadow": _funding_squeeze_collector(now_ms),
         "xs_reversion_shadow": _xs_reversion_collector(now_ms),
     }
@@ -236,6 +254,15 @@ def main():  # pragma: no cover - CLI entry
     trials = prereg.register_trials()  # idempotent pre-reg bump
     manifest = run_forward(data_dir=args.data_dir, wire_xs_reversion=args.wire_xs_reversion)
     manifest["trial_registry"] = trials
+    # S10's DeadEndsLedger.check() existed but was never called in prod (governance gap).
+    # This is INFORMATIVE ONLY — it logs the BLOCKED-BY-LEDGER / ALLOWED-NEW-AXIS /
+    # NOT-A-DEAD-END verdict for a human reader; it never blocks a collector or alters
+    # run_forward's control flow. Fail-soft: a missing/corrupt ledger must never crash
+    # the daily cron over a governance side-note.
+    try:
+        manifest["dead_ends_check"] = prereg.dead_ends_verdicts()
+    except Exception as e:  # pragma: no cover - defensive; dead_ends_verdicts is already fail-soft
+        manifest["dead_ends_check"] = {"error": f"{type(e).__name__}: {e}"}
     print(json.dumps(manifest, indent=2, default=str))
 
 

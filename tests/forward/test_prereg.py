@@ -59,3 +59,34 @@ def test_register_trials_bumps_new_trials_only_and_is_idempotent(tmp_path):
     # idempotent: re-running must NOT double-count (bump() has no guard of its own)
     prereg.register_trials(data_dir=tmp_path)
     assert gov.BookTrialRegistry(tmp_path).count(gov.Book.CRYPTO) == 1892  # idempotent: re-run = no-op (still 1892, not doubled)
+
+
+def test_dead_ends_verdicts_covers_every_preregistration():
+    # Informative-only governance check (Stream 10's DeadEndsLedger.check() was never
+    # called in prod before this wiring) — one verdict per pre-registered hypothesis,
+    # sourced from the committed ledger, never blocking anything.
+    verdicts = prereg.dead_ends_verdicts()
+    assert set(verdicts) == {pr.name for pr in prereg.ALL}
+    for v in verdicts.values():
+        assert v["verdict"] in {
+            gov.LedgerVerdict.BLOCKED.value,
+            gov.LedgerVerdict.ALLOWED_NEW_AXIS.value,
+            gov.LedgerVerdict.NOT_A_DEAD_END.value,
+        }
+        assert isinstance(v["reason"], str) and v["reason"]
+
+
+def test_dead_ends_verdicts_survives_a_missing_ledger_file(monkeypatch, tmp_path):
+    # governance_registry_dir() pointed at an empty dir (no dead_ends_ledger.json) must
+    # NOT crash — DeadEndsLedger.load() falls back to its in-module defaults, and the
+    # verdicts still cover every pre-registration.
+    monkeypatch.setenv("HERMES_GOVERNANCE_DIR", str(tmp_path))
+    verdicts = prereg.dead_ends_verdicts()
+    assert set(verdicts) == {pr.name for pr in prereg.ALL}
+
+
+def test_dead_ends_verdicts_survives_a_corrupt_ledger_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("HERMES_GOVERNANCE_DIR", str(tmp_path))
+    (tmp_path / "dead_ends_ledger.json").write_text("{not valid json")
+    verdicts = prereg.dead_ends_verdicts()  # DeadEndsLedger.load() catches JSONDecodeError
+    assert set(verdicts) == {pr.name for pr in prereg.ALL}

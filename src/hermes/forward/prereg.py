@@ -146,3 +146,33 @@ def register_trials(data_dir=None) -> dict:
         reg.bump(book, n=1, source=pr.trial_source)
         registered[pr.name] = reg.count(book)
     return {"counts": reg.as_dict()["counts"], "registered": registered}
+
+
+def dead_ends_verdicts() -> dict[str, dict]:
+    """Informative-ONLY ``DeadEndsLedger.check()`` verdict for every pre-registration.
+
+    Stream 10 built ``DeadEndsLedger.check()`` (BLOCKED-BY-LEDGER / ALLOWED-NEW-AXIS /
+    NOT-A-DEAD-END) but nothing in production ever called it — the forward cron's own
+    manifest is the natural, already-printed place for a human to see the verdict
+    without a separate report. This is deliberately NON-BLOCKING: it never raises,
+    never skips a collector, never touches ``run_forward``'s control flow. It is a
+    log line for governance review, nothing more.
+
+    Loads the ledger from the canonical committed ``governance/dead_ends_ledger.json``
+    (``s10_governance.governance_registry_dir()``); if that file is absent or
+    unreadable, ``DeadEndsLedger.load()`` already falls back to its in-module default
+    entries, so this never crashes the cron over a missing/corrupt ledger file.
+    """
+    from hermes.research import s10_governance as gov
+
+    ledger_path = gov.governance_registry_dir() / "dead_ends_ledger.json"
+    ledger = gov.DeadEndsLedger.load(ledger_path)
+    verdicts: dict[str, dict] = {}
+    for pr in ALL:
+        result = ledger.check(pr.hypothesis)
+        verdicts[pr.name] = {
+            "verdict": result["verdict"].value,
+            "matched": result["matched"],
+            "reason": result["reason"],
+        }
+    return verdicts
