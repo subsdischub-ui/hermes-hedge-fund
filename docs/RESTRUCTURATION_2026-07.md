@@ -286,3 +286,50 @@ depuis l'image au déploiement.
 2. Relevé des coûts d'infra réels (factures) pour ancrer la section 7.
 3. Le choix du vocabulaire : ce dossier remplace « passive income » par « rendement espéré positif
    à variance élevée, en validation » dans toute communication interne — à entériner.
+
+---
+
+## Addendum — 2026-07-02 soir : le 5e mensonge attrapé, et le test de largeur
+
+**Un bug de look-ahead a été découvert dans la machinerie d'honnêteté elle-même** — par son
+propre processus adversarial, pendant le test de largeur S2. `research_fx/fxgate.py::
+_basket_event_return` faisait « entrer » les instruments pas encore listés à la date d'un
+événement sur leur toute première barre historique (des mois/années plus tard). Corrigé
+(fix symétrique jambe réelle/null), puis TOUS les chiffres fondateurs ont été re-calculés :
+
+| Chiffre décisionnel | Avant fix | Après fix | Décision |
+|---|---|---|---|
+| S2 basket joint-null p (max 5 seeds) | 0.0235 | **0.0005** | S2 seul edge réel — **renforcé** |
+| S1 basket joint-null p | 0.693 | 0.507 | S1 indiscernable du hasard — **confirmé** |
+| S1 sleeve mean | +275.8 bps | +64.6 bps | S1 encore plus faible qu'affiché |
+| Book LOO-Δ (S1/S2/S3), Sharpe, DSR, PBO | — | **bit-à-bit identiques** | jamais touchés par le bug |
+
+Aucune décision de la restructuration n'est inversée ; deux sont renforcées. Les chiffres
+affichés (dashboard, chat, config) ont été mis à jour — y compris les deux notes de cartes
+stratégies qui portaient encore les grandeurs gonflées pré-ré-audit (« +1.1 », « +2.4..+4.5 »).
+
+**Test S2-largeur (PREREG `research_breadth/`, 2 essais comptés au registre → crypto 1908) :**
+univers figé de 12 perps (7 référence + ZEC/XRP/BNB/DOGE/TLM, critères écrits avant lecture).
+Résultat post-fix : **+75.8 % d'événements marginaux** (91 événements date-level dé-chevauchés),
+joint-null p_max5 = 0.003, edge marginal +211 bps/évt (unité panier-synchronisé, NON comparable
+au per-trade). **Verdict mécanique à la lettre du PREREG : ÉCHEC** — une fenêtre bear (n=4,
+2024-07→09) reste négative, et la règle à zéro tolérance s'applique telle qu'écrite. Deux
+réserves structurelles relevées par l'audit : (1) **biais de survie non testé** — l'univers ne
+contient que des survivants, signe défavorable au chiffre publié ; (2) **2022 : zéro événement
+z≥2 sur les 12 symboles** — le bear-check est structurellement aveugle au cœur du crash (S2
+est un phénomène de rebond, pas de chute). Suite honnête : soit UN test durci pré-enregistré
+(univers reconstruit AVEC les perps délistés — un test plus dur, pas plus facile), soit
+clôture de la piste. Pas de re-découpage des fenêtres, pas de 3e chance.
+
+**Éclaireurs hors-repo :** token unlocks = axe verrouillé par les données (toute l'industrie a
+mis l'historique derrière un paywall ; le pattern J-30 est déjà publié par Keyrock sur 16k
+événements — valeur différentielle douteuse ; option : CryptoRank Basic $19/mois, décision
+opérateur, ou collecte gratuite quotidienne). Cross-venue = collect-now (Bybit : 6,3 ans de
+funding vérifiés — piste de largeur supplémentaire documentée ; Hyperliquid : funding horaire,
+la règle gelée ne s'y transpose pas sans requalification ; re-test ≥ 2026-11).
+
+**Réponse à la question opérateur « comment le système génère d'ici les échéances » :** la
+largeur était le levier le plus court et il vient d'être testé — il ne passe pas la barre à la
+lettre aujourd'hui. Le flux du livre reste celui du slate validé. La variable dominante du
+revenu reste le capital, pas le signal ; le chemin par paliers ($100 paper → gates → réel)
+reste le seul qui ne scale pas du bruit.

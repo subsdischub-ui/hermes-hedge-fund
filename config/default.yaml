@@ -102,10 +102,11 @@ strategy:
   # RESTRUCTURATION 2026-07-02 (docs/RESTRUCTURATION_2026-07.md §3, operator-approved):
   # ts_mom_vol_scaled (ex-Strategy #1 momentum) is RETIRED from the slate — the re-audit
   # (research_crypto2/_book.json) measured it as a bull-beta drag: book LOO-Δ Sharpe −0.146
-  # (the book more than doubles its Sharpe without it) and joint-null p=0.69 (its own trade
-  # basket is indistinguishable from random entry). mean_reversion_regime is a DISTINCT
+  # (the book more than doubles its Sharpe without it) and joint-null p=0.507 (its own trade
+  # basket is indistinguishable from random entry; p post look-ahead gate fix 2026-07-02,
+  # was 0.69 pre-fix — verdict unchanged). mean_reversion_regime is a DISTINCT
   # range skill and stays. Strategy #2 = funding_squeeze_continuation — the one real edge
-  # (joint-null p=0.017; honest magnitudes per the re-audit: per-trade Sharpe ~0.3,
+  # (joint-null p=0.0005 post-gatefix, was 0.017; honest magnitudes per the re-audit: per-trade Sharpe ~0.3,
   # OOS-40 ~0.3 — the old "+1.1" headline was the annualized number, do not quote it bare).
   # It self-selects at funding z>=2 so it is exempt from conviction_min automatically.
   # #3 funding_carry_harvest is delta-neutral (the paper book routes it STRUCTURALLY

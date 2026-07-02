@@ -59,11 +59,11 @@ quand leur jauge est armée, sinon elles attendent par discipline) :
 - #1 Mean reversion (régime) : range mean-reversion, skill DISTINCT (jamais concerné par le \
 retrait de S1 ci-dessous).
 - #2 Funding squeeze (funding z>=2, long ~96h) : continuation sur funding extrême, orthogonale à #1 \
-— le SEUL edge validé du livre (joint-null p=0.017).
+— le SEUL edge validé du livre (joint-null p=0.0005 après le fix de mesure du 2026-07-02).
 - #3 Funding carry delta-neutral (short perp + long spot, funding>=2bps, ~8j) : récolte le carry \
 en marché calme, market-neutral ; ne trade JAMAIS à nu (prouvé perdant sur 9 ans).
 RETIRÉ DU SLATE (2026-07-02) : l'ex-Strategy #1 momentum (ts_mom_vol_scaled, |score|>=1.0) — \
-mesuré comme un drag bull-beta (book LOO-Δ Sharpe -0.146, joint-null p=0.69 : indiscernable d'une \
+mesuré comme un drag bull-beta (book LOO-Δ Sharpe -0.146, joint-null p=0.507 : indiscernable d'une \
 entrée aléatoire). Le contexte ci-dessous détaille les chiffres et le nouveau gate \
 (edge_paper_trades) — utilise-les si on te pose la question, ne les improvise jamais.
 PHILOSOPHIE : discipline > agitation. Forcer des trades dans le bruit détruit l'edge. Un livre à \
@@ -324,7 +324,10 @@ def _restructuration_status(s, edge_paper_trades_observed: int) -> dict[str, Any
     return {
         "slate": slate,
         "retired": [
-            {"skill_id": "ts_mom_vol_scaled", "loo_delta_sharpe": -0.146, "joint_null_p": 0.69},
+            # p-values post-fix look-ahead du 2026-07-02 (bug fxgate _basket_event_return
+            # corrigé, re-run officiel — research_crypto2/JOURNAL_rerun_gatefix.md) :
+            # S1 p 0.69→0.507 (toujours indiscernable du hasard), LOO-Δ inchangé.
+            {"skill_id": "ts_mom_vol_scaled", "loo_delta_sharpe": -0.146, "joint_null_p": 0.507},
         ],
         "gate": {
             "edge_paper_trades_target": gate_target,
@@ -338,13 +341,27 @@ def _restructuration_status(s, edge_paper_trades_observed: int) -> dict[str, Any
         "fx": {"status": "fermé", "reopen_check": "2027-07-02"},
         "global_cutoff": "2028-01-02",
         "dossier": "docs/RESTRUCTURATION_2026-07.md",
+        # Test S2-largeur du 2026-07-02 soir (PREREG research_breadth) — verdict à la
+        # lettre : ÉCHEC (une fenêtre bear n=4 négative), malgré +75.8% d'événements
+        # marginaux et joint-null p_max=0.003. Réserves : biais de survie non testé
+        # (signe défavorable), 2022 sans aucun événement z>=2 (bear-check aveugle au
+        # coeur du crash). Suite honnête = un seul test DURCI pré-enregistré (univers
+        # incluant les perps délistés) — pas de re-découpage des fenêtres.
+        "breadth_test": {
+            "date": "2026-07-02",
+            "verdict": "ÉCHEC (lettre du PREREG — bear-window n=4 négative)",
+            "marginal_events_pct": 75.8,
+            "joint_null_p_max5": 0.003,
+            "reserves": ["biais de survie non testé", "2022: zéro événement z>=2"],
+            "next": "test durci pré-enregistré (univers avec perps délistés) ou clôture",
+        },
     }
 
 
 # Strategy attribution: which skill belongs to which live/research strategy.
 # RESTRUCTURATION 2026-07-02 (docs/RESTRUCTURATION_2026-07.md §3): ts_mom_vol_scaled
 # ("Strategy #1 momentum") was RETIRED from config strategy.allowed_skills (bull-beta
-# drag: book LOO-Δ Sharpe -0.146, joint-null p=0.69). mean_reversion_regime is a
+# drag: book LOO-Δ Sharpe -0.146, joint-null p=0.507 post-gatefix). mean_reversion_regime is a
 # DISTINCT skill built on a different signal (never part of the S1 audit sleeve) and
 # stays live. Before this fix both were folded into one "Strategy 1 (Momentum)" card,
 # which would have shown future mean_reversion_regime trades as if they belonged to a
@@ -411,18 +428,21 @@ def _strategies_ab(closed_rows, open_positions=None) -> dict:
             # live once funding trades close; "wired" while the feed runs but no trade yet
             "status": "live" if s2 else "wired",
             "live": _strategy_stats(s2),
-            # Honest status: after a systematic ~800-backtest sweep (every
-            # microstructure feature x both directions x horizons {12,24,48} x 3
-            # assets) ONE brick survived the strict coherent gate AND generalized
-            # cross-asset: funding_squeeze_continuation (extreme-positive funding ->
-            # long, ~96h hold). OOS Sharpe ~+1.1, daily-PnL rho to momentum ~0.04.
-            # Now registered live with its own 24-bar hold; trades will populate here.
+            # Honest status: after a systematic ~800-backtest sweep, ONE brick survived
+            # the strict gate AND generalized cross-asset: funding_squeeze_continuation
+            # (extreme-positive funding -> long, ~96h hold). RESTATED per the 2026-06-25
+            # re-audit + 2026-07-02 gate fix: the old "+1.1" headline was the ANNUALIZED
+            # number — honest magnitudes are per-trade Sharpe ~0.3, OOS-40 ~0.3; weekly
+            # book rho to momentum was 0.35 (not the daily ~0.04). Basket joint-null
+            # p=0.0005 post-fix: the ONE real edge of the book.
             "research": {
                 "oos_validated_bricks": 1,
                 "candidates_tested": 24,
-                "note": "funding_squeeze_continuation: validated OOS on BTC/ETH/SOL (Sharpe ~+1.1, "
-                        "orthogonal rho~0.04), live funding feed wired. Long-only risk-on sleeve "
-                        "(self-deactivates in deep bear). All other candidates failed cross-asset.",
+                "note": "funding_squeeze_continuation: le seul edge réel du livre (joint-null "
+                        "basket p=0.0005 post-fix 2026-07-02, bear-positive). Magnitudes honnêtes "
+                        "restatées par le ré-audit : Sharpe par trade ~0.3, OOS-40 ~0.3 (le "
+                        "'+1.1' historique était le chiffre annualisé), ~13 évts/an sur 3 actifs. "
+                        "Long-only, s'arme sur funding z>=2 seulement.",
             },
         },
         "strategy_3": {
@@ -433,11 +453,13 @@ def _strategies_ab(closed_rows, open_positions=None) -> dict:
             "research": {
                 "oos_validated_bricks": 1,
                 "candidates_tested": 40,
-                "note": "Delta-neutral funding carry (cash-and-carry): validated OOS Sharpe +2.4..+4.5 "
-                        "on BTC/ETH/SOL, orthogonal to #1 AND #2 (rho~0.05), active in calm markets. "
-                        "Now WIRED in paper as a two-leg pair (short perp + long spot, MAKER fees) — "
-                        "the carry skill routes structurally to the hedged path, NEVER a naked order "
-                        "(a 9y test proved naked is OOS-negative). Real-money cross-venue leg pending.",
+                "note": "Delta-neutral funding carry (cash-and-carry), RESTATÉ par le ré-audit "
+                        "2026-06-25 : au coût taker honnête (30bps deux jambes) l'edge est mince "
+                        "(+16..+23bps/trade) avec OOS-40 ~0 — le '+2.4..+4.5' historique ne "
+                        "reproduit pas au coût honnête ; sain seulement en exécution maker "
+                        "(~12bps, +34bps/trade), d'où HOLD-only tant qu'un fill-rate réel n'est "
+                        "pas mesuré. Route structurellement en paire (short perp + long spot), "
+                        "JAMAIS à nu (prouvé perdant sur 9 ans).",
             },
         },
         "retired_skills": {
@@ -448,7 +470,7 @@ def _strategies_ab(closed_rows, open_positions=None) -> dict:
             "research": {
                 "note": "ts_mom_vol_scaled (ex-Strategy #1 momentum) retiré le 2026-07-02 : "
                         "book LOO-Δ Sharpe -0.146 (le livre double son Sharpe sans lui), "
-                        "joint-null p=0.69 (son panier de trades est indiscernable d'une entrée "
+                        "joint-null p=0.507 post-fix (son panier de trades est indiscernable d'une entrée "
                         "aléatoire). Les trades historiques ci-dessus (incl. legacy "
                         "breakout/trend/mean_reversion_atr) restent visibles mais n'arment plus "
                         "aucun signal futur — voir docs/RESTRUCTURATION_2026-07.md §3.",

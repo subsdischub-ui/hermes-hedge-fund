@@ -104,7 +104,7 @@ async def test_chat_context_carries_restructuration_facts():
     assert "funding_squeeze_continuation" in ctx
     assert "ts_mom_vol_scaled" in ctx
     assert "0.146" in ctx  # LOO-Δ Sharpe
-    assert "0.69" in ctx or "0.693" in ctx  # joint-null p
+    assert "0.507" in ctx  # joint-null p (post-fix look-ahead 2026-07-02)
     # The gate, so it can answer "c'est quoi le gate maintenant ?"
     assert "edge_paper_trades" in ctx or "40" in ctx
     # Dated deadlines for metals/FX/global cutoff.
