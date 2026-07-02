@@ -956,6 +956,26 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         tags=("cross-venue funding", "cross-venue dispersion", "cross venue dispersion", "cross venue funding",
               "cross-venue funding dispersion"),
     ),
+    DeadEnd(
+        "Global-LSR (all-accounts) contrarian positioning", "crypto",
+        "2026-07-02 (Stream research, global_lsr_prereg trial)",
+        "Retail-aggregate long-short-ratio (CoinGlass global_account_long_short_ratio) as a SYMMETRIC "
+        "contrarian directional sleeve on BTC/ETH/SOL/AVAX 1d: z-score 180-bar trailing (ddof=0), |z|>=2 "
+        "threshold, hold 2 bars, entry lag 1, 15bps RT taker cost. Appendix ARB/SUI/WIF non-decisive.",
+        "Date-level de-overlapped basket (4 decisive symbols, event_basket_gate, no_overlap=True) fails "
+        "BOTH binding criteria simultaneously: MC random-entry null p in [0.1155, 0.1415] across 5 seeds "
+        "(all >= 0.05) AND OOS-by-date Sharpe = -0.1472 (<=0) across all 5 seeds. DSR against the "
+        "post-bump crypto-book trial count (N=1909) collapses to ~2.5e-05. Not a momentum-redux (max "
+        "|rho| z-vs-momentum30d = 0.337 < 0.7) and orthogonal to S2 funding_squeeze (weekly rho=-0.096 "
+        "< 0.30) — a genuine null result, not a redux or a duplicate of an existing pillar.",
+        "basket mc_p >= 0.05 (5 seeds, 0.1155-0.1415) AND OOS-by-date <= 0 (-0.1472, 5 seeds); "
+        "DSR vs N=1909 ~= 2.5e-05",
+        "A genuinely new data axis (e.g., cross-venue global-LSR divergence, or a sub-daily cadence with "
+        "a lake that supports it) with its own fresh pre-registration under the hardened bar. NEVER "
+        "re-run the same 180/2.0/2-bar/1d form on this instrument set — it is exhausted.",
+        tags=("global lsr", "global-lsr", "all-accounts lsr", "retail lsr contrarian",
+              "global account long short ratio", "aggregate positioning contrarian"),
+    ),
 ]
 
 

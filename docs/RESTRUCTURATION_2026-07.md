@@ -360,3 +360,13 @@ et ce dossier a été écrit sans les inventorier. Statuts corrigés en conséqu
   bloqué une re-proposition du top-LSR mort à quelques minutes du lancement. Et la nouvelle
   règle mémoire est posée : AVANT toute proposition d'achat/collecte, inventorier
   `data/manifest/DATA_MANIFEST.md` + `data/raw/` + le jumeau hermes-s0-alpha.
+
+**Verdict du test global-LSR (nuit du 2026-07-02, registre → 1909, doublement reproduit) :
+MORT — un vrai zéro, proprement.** Panier date-level dé-chevauché BTC/ETH/SOL/AVAX (203
+événements) : joint-null p ∈ [0.116, 0.142] sur 5 seeds (jamais < 0.05) ET OOS-by-date −0.147 ;
+DSR ≈ 2.5e-05. Les garde-fous confirment que la mesure est saine : pas un redux prix
+(|ρ| vs momentum max 0.337 < 0.7), orthogonal à S2 (ρ = −0.096). Entrée ledger #37 gravée avec
+condition de résurrection. L'écran taker-perp sort CANDIDAT (ρ prix < 0.2) — un éventuel test
+est un pré-enregistrement séparé, décision opérateur. La piste largeur est CLOSE (décision
+opérateur). Bilan honnête de l'exploitation du lake payé : ses axes sont désormais TOUS adjugés
+sauf un candidat sous condition — l'abonnement a produit des verdicts, pas des edges.

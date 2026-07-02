@@ -1,7 +1,7 @@
 {
   "counts": {
     "cross": 5,
-    "crypto": 1908,
+    "crypto": 1909,
     "fx_metals": 53
   },
   "provenance": {
@@ -67,6 +67,10 @@
       {
         "n": 1,
         "source": "s2_breadth_prereg_v2_gatefix"
+      },
+      {
+        "n": 1,
+        "source": "global_lsr_prereg"
       }
     ],
     "fx_metals": [

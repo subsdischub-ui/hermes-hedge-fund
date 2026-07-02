@@ -353,7 +353,25 @@ def _restructuration_status(s, edge_paper_trades_observed: int) -> dict[str, Any
             "marginal_events_pct": 75.8,
             "joint_null_p_max5": 0.003,
             "reserves": ["biais de survie non testé", "2022: zéro événement z>=2"],
-            "next": "test durci pré-enregistré (univers avec perps délistés) ou clôture",
+            "next": "CLOS (décision opérateur 2026-07-02 : pas de test durci)",
+        },
+        # Carte lake-vs-ledger du 2026-07-02 nuit : sur tout le lake CoinGlass payé,
+        # 2 axes étaient non-adjugés. Le n°1 a été testé le soir même (pré-enregistré,
+        # registre 1909, doublement reproduit) : MORT — vrai zéro, pas un redux
+        # (anti-momentum ρ max 0.337 < 0.7 ; orthogonal S2 ρ=-0.096). Ledger #37.
+        "lake_axes": {
+            "global_lsr_contrarian": {
+                "verdict": "MORT 2026-07-02 (joint-null p 0.12-0.14 x5 seeds ET OOS -0.15 ; DSR≈0)",
+                "ledger": "#37",
+            },
+            "taker_volume_perp": {
+                "verdict": "CANDIDAT (écran anti-redux passé : ρ prix < 0.2) — pré-enregistrement "
+                           "futur = décision opérateur",
+            },
+            "top_lsr_daily_contrarian": {
+                "verdict": "MORT (ledger #25, Stream 2 sur historique complet) — la collecte "
+                           "quotidienne continue pour la porte intraday uniquement",
+            },
         },
     }
 
@@ -611,6 +629,12 @@ def _restructuration_chat_block(s, edge_count: int) -> str:
             f"p={bt.get('joint_null_p_max5')}, le PREREG à zéro tolérance s'applique. "
             f"Réserves : {', '.join(bt.get('reserves', []))}. Suite : {bt.get('next')}.\n"
             if (bt := r.get("breadth_test")) else ""
+        )
+        + (
+            "  - Data lake CoinGlass (payé, inventorié 2026-07-02) : "
+            + " ; ".join(f"{k} → {v.get('verdict')}" for k, v in la.items())
+            + ".\n"
+            if (la := r.get("lake_axes")) else ""
         )
         + f"  - Couperet global du narratif « revenu par trading » : {r['global_cutoff']}."
     )
