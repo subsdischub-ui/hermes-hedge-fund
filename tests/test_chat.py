@@ -110,3 +110,40 @@ async def test_chat_context_carries_restructuration_facts():
     # Dated deadlines for metals/FX/global cutoff.
     assert "2027-07-02" in ctx
     assert "2028-01-02" in ctx
+
+
+@pytest.mark.asyncio
+async def test_chat_context_survives_shadow_gauges(monkeypatch):
+    """Régression du 500 prod du 2026-07-02 : depuis le retrait de S1, le pulse émet des
+    jauges SHADOW ({shadow, skill, side, conf, armed} — sans sleeve/metric/val/thr) pour
+    les skills hors slate. Le contexte chat doit les rendre proprement, jamais crasher."""
+    prod_shaped_pulse = {
+        "kind": "pulse",
+        "ts": "2026-07-02T21:00:00+00:00",
+        "symbol": "BTC/USDT:USDT",
+        "regime": "range",
+        "gauges": [
+            {"sleeve": "Funding #2", "metric": "funding z", "val": 0.4, "thr": 2.0, "armed": False},
+            # la forme exacte qui a fait crasher la prod (KeyError 'sleeve'):
+            {"shadow": True, "skill": "ts_mom_vol_scaled", "side": "BUY", "conf": 0.37, "armed": True},
+            {},  # jauge dégénérée: doit être ignorée sans exception
+        ],
+    }
+    monkeypatch.setattr(api, "_recent_activity", lambda s: [prod_shaped_pulse])
+    ctx = await api._chat_context()
+    assert "shadow hors-slate" in ctx and "ts_mom_vol_scaled" in ctx
+    assert "Funding #2" in ctx
+
+
+def test_chat_returns_200_even_if_context_builder_raises(monkeypatch):
+    """Défense en profondeur : un bug du contexte doit dégrader la réponse, jamais 500."""
+    async def _boom():
+        raise RuntimeError("bug d'affichage simulé")
+
+    monkeypatch.setattr(api, "_chat_context", _boom)
+    monkeypatch.setattr(api, "get_router", lambda: _FakeRouter())
+    with TestClient(app) as c:
+        r = c.post("/chat", json={"message": "situation ?"})
+        assert r.status_code == 200
+        sys_msg = _FakeRouter.last_messages[0]["content"]
+        assert "état live indisponible" in sys_msg

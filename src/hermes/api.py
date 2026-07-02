@@ -512,22 +512,38 @@ async def _chat_context() -> str:
         for k in ("strategy_1", "strategy_2", "strategy_3") if k in ab
     )
     pos = ", ".join(
-        f"{p.symbol}/{p.skill_id}(qty={round(p.qty, 5)}, uPnL ${round(p.unrealized_pnl_usd, 3)})"
+        f"{p.symbol}/{p.skill_id}(qty={round(p.qty, 5)}, "
+        f"uPnL ${round(p.unrealized_pnl_usd, 3) if p.unrealized_pnl_usd is not None else '?'})"
         for p in positions
     ) or "aucune"
     seen: dict[str, int] = {}
     gauges: list[str] = []
     for a in sorted((x for x in _recent_activity(s) if x.get("kind") == "pulse"),
-                    key=lambda a: a.get("ts", ""), reverse=True):
+                    key=lambda a: str(a.get("ts") or ""), reverse=True):
         sym = a.get("symbol")
         if sym in seen:
             continue
         seen[sym] = 1
-        gl = "; ".join(
-            f"{g['sleeve']} {g['metric']} {g['val']}/{g['thr']} {'ARMÉ' if g.get('armed') else 'attend'}"
-            for g in (a.get("gauges") or [])
-        )
-        gauges.append(f"  - {sym} [{a.get('regime')}]: {gl}")
+        parts: list[str] = []
+        for g in (a.get("gauges") or []):
+            # Two gauge shapes coexist in the activity ring (pulse.py): slate gauges
+            # ({sleeve, metric, val, thr, armed[, retired]}) and SHADOW gauges for
+            # skills outside allowed_skills ({shadow, skill, side, conf, armed}) —
+            # the latter started appearing for ts_mom the moment S1 left the slate.
+            # Render both, and NEVER crash the chat over a display record.
+            if g.get("shadow"):
+                parts.append(
+                    f"[shadow hors-slate] {g.get('skill', '?')} {g.get('side', '?')} "
+                    f"conf {g.get('conf', '?')} (signal calculé, jamais exécuté)"
+                )
+            elif "sleeve" in g:
+                retired_tag = " (retirée)" if g.get("retired") else ""
+                parts.append(
+                    f"{g.get('sleeve')}{retired_tag} {g.get('metric', '?')} "
+                    f"{g.get('val', '?')}/{g.get('thr', '?')} "
+                    f"{'ARMÉ' if g.get('armed') else 'attend'}"
+                )
+        gauges.append(f"  - {sym} [{a.get('regime')}]: {'; '.join(parts)}")
     # Itemised trade history — without this, the LLM has only aggregates (count/
     # win_rate/pnl) and confabulates per-trade detail when asked for it (observed
     # live: invented 4/6 trades with full conviction). Capped so context size stays
@@ -596,7 +612,11 @@ def _restructuration_chat_block(s, edge_count: int) -> str:
 async def chat(req: ChatRequest) -> dict[str, Any]:
     if not (req.message or "").strip():
         raise HTTPException(status_code=400, detail="message vide")
-    context = await _chat_context()
+    try:
+        context = await _chat_context()
+    except Exception as e:  # defense in depth: a context/display bug must degrade, never 500
+        log.warning("chat_context_failed", error=str(e))
+        context = f"(état live indisponible — détail technique: {e})"
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": _CHAT_SYSTEM + "\n\n" + context}
     ]
