@@ -58,12 +58,18 @@ def tick(symbol: str = typer.Argument(..., help="e.g. BTC/USDC"), timeframe: str
 @app.command()
 def stage() -> None:
     async def _run() -> None:
+        from hermes.settings import get_settings
+
         await get_db().init()
-        stats = await TradeJournal().stats()
+        journal = TradeJournal()
+        stats = await journal.stats()
+        allowed = get_settings().yaml("strategy", "allowed_skills") or []
+        edge_count = await journal.count_closed_by_skills(allowed)
         mgr = StageManager()
         rep = mgr.evaluate({
             "live_trades": stats["count"],
             "paper_trades": stats["count"],
+            "edge_paper_trades": edge_count,
             "rule_violations": 0,
         })
         typer.echo(rep.summary)

@@ -120,14 +120,18 @@ async def status() -> dict[str, Any]:
     journal = TradeJournal()
     stats = await journal.stats()
     stage_mgr = StageManager()
+    allowed = s.yaml("strategy", "allowed_skills") or []
+    edge_count = await journal.count_closed_by_skills(allowed)
     # Stage gates require a real walk-forward Sharpe and rule-violation count;
     # the status endpoint reports the metrics it can prove and leaves the
     # other gates unfilled so the operator sees them as BLOCKED rather than
-    # passed-on-a-proxy.
+    # passed-on-a-proxy. edge_paper_trades counts ONLY current-slate trades
+    # (restructuration 2026-07-02) — legacy/retired skills never advance a stage.
     report = stage_mgr.evaluate(
         metrics={
             "live_trades": stats["count"],
             "paper_trades": stats["count"],
+            "edge_paper_trades": edge_count,
             "rule_violations": 0,
         }
     )
@@ -156,8 +160,15 @@ async def dashboard_data() -> dict[str, Any]:
     stats = await journal.stats()
     all_closed = await journal.recent_closed(since=datetime.now(UTC) - timedelta(days=365))
     recent = all_closed[:20]
+    allowed = s.yaml("strategy", "allowed_skills") or []
+    edge_count = await journal.count_closed_by_skills(allowed)
     report = StageManager().evaluate(
-        {"live_trades": stats["count"], "paper_trades": stats["count"], "rule_violations": 0}
+        {
+            "live_trades": stats["count"],
+            "paper_trades": stats["count"],
+            "edge_paper_trades": edge_count,
+            "rule_violations": 0,
+        }
     )
     jobs = []
     sched = getattr(app.state, "scheduler", None)

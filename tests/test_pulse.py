@@ -29,7 +29,13 @@ def test_pulse_entry_would_enter_on_saturated_signal():
     assert e["would_skill"] == "ts_mom_vol_scaled"
 
 
-def test_pulse_entry_holds_low_conviction_with_reason():
+def test_pulse_entry_holds_low_conviction_with_reason(monkeypatch):
+    # The live _CONVICTION_GATED set is empty since the 2026-07-02 restructuration
+    # (ts_mom retired); gate it back in for the scope of this test so the pulse's
+    # low-conviction HOLD reason stays covered.
+    from hermes.risk import selective as sel
+
+    monkeypatch.setattr(sel, "_CONVICTION_GATED", {"ts_mom_vol_scaled"})
     sigs = [_sig("ts_mom_vol_scaled", "BUY", 0.4)]
     e = pulse_entry("ETH/USDC", {"regime": "range", "efficiency_ratio": 0.2}, sigs, set(), CFG)
     assert e["would_act"] == "HOLD"

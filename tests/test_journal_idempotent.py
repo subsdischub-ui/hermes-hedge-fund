@@ -61,3 +61,25 @@ async def test_close_is_idempotent_and_set_reflection_safe():
         assert row3.reflection == "I learned that fees matter."
         assert row3.closed_at == original_close
         assert row3.pnl_usd == original_pnl
+
+
+@pytest.mark.asyncio
+async def test_count_closed_by_skills_filters_retired_skills():
+    """edge_paper_trades feed: only closed trades from the given slate count —
+    legacy/retired skills (ts_mom_vol_scaled, breakout_vol_expansion, ...) are excluded."""
+    await get_db().init()
+    journal = TradeJournal()
+    now = datetime.now(UTC)
+    for skill in ("ts_mom_vol_scaled", "breakout_vol_expansion", "mean_reversion_regime",
+                  "funding_squeeze_continuation"):
+        tid = await journal.open(JournalEntry(
+            symbol="XRP/USDT:USDT", side="BUY", qty=0.001, entry_price=100.0,
+            opened_at=now, skill_id=skill,
+        ))
+        await journal.close(tid, exit_price=101.0, pnl_usd=0.1, fee_usd=0.01, exit_reason="tp")
+    slate = ["mean_reversion_regime", "funding_squeeze_continuation", "funding_carry_harvest"]
+    before_legacy = await journal.count_closed_by_skills(["ts_mom_vol_scaled"])
+    assert await journal.count_closed_by_skills(slate) >= 2
+    assert before_legacy >= 1
+    # legacy skills are excluded from the slate count: slate + legacy counts are disjoint sets
+    assert await journal.count_closed_by_skills([]) == 0

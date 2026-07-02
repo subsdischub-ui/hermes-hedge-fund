@@ -29,12 +29,14 @@ __all__ = [
 # The LIVE crypto slate → regime buckets. Must stay in sync with
 # config/default.yaml:strategy.allowed_skills (pinned by
 # test_combination_slate_matches_live_allowed_skills, so it can't silently drift
-# again). Strategy #1 = ts_mom_vol_scaled (trend) + mean_reversion_regime (range);
-# Strategy #2 funding_squeeze_continuation and #3 funding_carry_harvest are
-# regime-INDEPENDENT (they arm on the perp funding rate / are delta-neutral), so
-# they live in ALWAYS_ON. The retired families (breakout_vol_expansion,
-# pairs_eth_btc, intraday_tod_btc — all refuted/not in allowed_skills) were removed.
-TREND_SKILLS = ["ts_mom_vol_scaled"]
+# again). RESTRUCTURATION 2026-07-02: ts_mom_vol_scaled retired (bull-beta drag,
+# book LOO-Δ −0.146, joint-null p=0.69 — docs/RESTRUCTURATION_2026-07.md §3), so the
+# trend bucket is EMPTY: in a trend regime only ALWAYS_ON skills are active.
+# mean_reversion_regime (range) stays; Strategy #2 funding_squeeze_continuation and
+# #3 funding_carry_harvest are regime-INDEPENDENT (they arm on the perp funding
+# rate / are delta-neutral), so they live in ALWAYS_ON. Previously retired families:
+# breakout_vol_expansion, pairs_eth_btc, intraday_tod_btc.
+TREND_SKILLS: list[str] = []
 RANGE_SKILLS = ["mean_reversion_regime"]
 ALWAYS_ON = ["funding_squeeze_continuation", "funding_carry_harvest"]
 

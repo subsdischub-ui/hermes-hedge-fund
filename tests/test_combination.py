@@ -142,31 +142,50 @@ def test_combination_slate_matches_live_allowed_skills():
 
 
 def test_annotate_marks_active_set_and_normalised_blend_weights():
+    # RESTRUCTURATION 2026-07-02: ts_mom_vol_scaled is retired (in NO bucket), so it
+    # must be inactive even in its old home regime; the range slate + ALWAYS_ON carry
+    # the blend. Pins docs/RESTRUCTURATION_2026-07.md §3.
     signals = [
         {"skill_id": "ts_mom_vol_scaled", "confidence": 0.5},
         {"skill_id": "mean_reversion_regime", "confidence": 0.5},
         {"skill_id": "funding_squeeze_continuation", "confidence": 0.5},
     ]
     returns = {
-        "ts_mom_vol_scaled": [0.01, -0.01, 0.02],
+        "mean_reversion_regime": [0.01, -0.01, 0.02],
         "funding_squeeze_continuation": [0.005, -0.002, 0.001],
     }
     regime, out = annotate_active_and_blend(
-        signals, efficiency_ratio=0.6, prev_state=None, returns_by_skill=returns
+        signals, efficiency_ratio=0.2, prev_state=None, returns_by_skill=returns
     )
-    assert regime == "trend"
+    assert regime == "range"
     by = {s["skill_id"]: s for s in out}
-    assert by["ts_mom_vol_scaled"]["active"] is True  # trend skill, trend regime
-    assert by["mean_reversion_regime"]["active"] is False  # range skill, off-regime
+    assert by["ts_mom_vol_scaled"]["active"] is False  # retired: in no bucket, any regime
+    assert by["mean_reversion_regime"]["active"] is True  # range skill, range regime
     assert by["funding_squeeze_continuation"]["active"] is True  # always-on (regime-independent)
     # Blend weights are over the active skills that have usable history, summing 1.
-    assert by["ts_mom_vol_scaled"]["blend_weight"] > 0.0
-    assert by["mean_reversion_regime"]["blend_weight"] == 0.0
+    assert by["mean_reversion_regime"]["blend_weight"] > 0.0
+    assert by["ts_mom_vol_scaled"]["blend_weight"] == 0.0
     assert math.isclose(
         sum(s["blend_weight"] for s in out), 1.0, rel_tol=1e-9
     )
     # Each signal also carries the routed regime for downstream agents.
-    assert all(s["regime_routed"] == "trend" for s in out)
+    assert all(s["regime_routed"] == "range" for s in out)
+
+
+def test_annotate_trend_regime_has_only_always_on_since_restructuration():
+    """The trend bucket is EMPTY since ts_mom's retirement: a trend regime activates
+    only the regime-independent ALWAYS_ON sleeves — no skill rides bull-beta."""
+    signals = [
+        {"skill_id": "ts_mom_vol_scaled", "confidence": 1.0},
+        {"skill_id": "funding_squeeze_continuation", "confidence": 0.5},
+    ]
+    regime, out = annotate_active_and_blend(
+        signals, efficiency_ratio=0.6, prev_state=None, returns_by_skill={}
+    )
+    assert regime == "trend"
+    by = {s["skill_id"]: s for s in out}
+    assert by["ts_mom_vol_scaled"]["active"] is False
+    assert by["funding_squeeze_continuation"]["active"] is True
 
 
 def test_annotate_regime_hysteresis_holds_prev_in_deadband():
@@ -177,12 +196,12 @@ def test_annotate_regime_hysteresis_holds_prev_in_deadband():
 
 
 def test_annotate_no_history_gives_zero_blend_but_still_routes():
-    signals = [{"skill_id": "ts_mom_vol_scaled", "confidence": 0.5}]
+    signals = [{"skill_id": "funding_squeeze_continuation", "confidence": 0.5}]
     regime, out = annotate_active_and_blend(
         signals, efficiency_ratio=0.6, prev_state=None, returns_by_skill={}
     )
     assert regime == "trend"
-    assert out[0]["active"] is True
+    assert out[0]["active"] is True  # ALWAYS_ON: active in any regime
     assert out[0]["blend_weight"] == 0.0  # no usable returns -> no live blend yet
 
 
@@ -196,26 +215,26 @@ def test_blend_live_shadow_packages_a_loggable_record_with_real_returns():
     is packaged as a structured SHADOW record (regime, active set, weights, gross)
     ready to be logged so its apport can be measured over time."""
     signals = [
-        {"skill_id": "ts_mom_vol_scaled", "confidence": 0.5},
+        {"skill_id": "mean_reversion_regime", "confidence": 0.5},
         {"skill_id": "funding_squeeze_continuation", "confidence": 0.5},
     ]
     returns = {
-        "ts_mom_vol_scaled": [0.01, -0.01, 0.02],
+        "mean_reversion_regime": [0.01, -0.01, 0.02],
         "funding_squeeze_continuation": [0.005, -0.002, 0.001],
     }
     regime, enriched, record = blend_live_shadow(
-        signals, efficiency_ratio=0.6, prev_state=None, returns_by_skill=returns
+        signals, efficiency_ratio=0.2, prev_state=None, returns_by_skill=returns
     )
-    assert regime == "trend"
+    assert regime == "range"
     # The record captures the live (non-zero) blend over the active sleeves.
     assert set(record["blend_weights"]) == {
-        "ts_mom_vol_scaled",
+        "mean_reversion_regime",
         "funding_squeeze_continuation",
     }
     assert math.isclose(record["gross"], 1.0, rel_tol=1e-9)
     assert sorted(record["active_skills"]) == [
         "funding_squeeze_continuation",
-        "ts_mom_vol_scaled",
+        "mean_reversion_regime",
     ]
     # enriched signals are still returned (advisory enrichment preserved).
     assert all("blend_weight" in s for s in enriched)

@@ -45,13 +45,30 @@ def test_blocks_skill_outside_selective_slate():
     assert "slate" in reason.lower()
 
 
-def test_blocks_low_conviction_ts_mom():
+def test_blocks_low_conviction_when_skill_is_conviction_gated(monkeypatch):
+    # The live _CONVICTION_GATED set is EMPTY since the 2026-07-02 restructuration
+    # (ts_mom retired); the floor MECHANISM stays wired for any future scored skill —
+    # covered here by gating ts_mom back in for the scope of this test.
+    from hermes.risk import selective as sel
+
+    monkeypatch.setattr(sel, "_CONVICTION_GATED", {"ts_mom_vol_scaled"})
     ok, reason = selective_gate(
         "BUY", "BTC/USDC", "ts_mom_vol_scaled",
         [_sig("ts_mom_vol_scaled", 0.6)], set(), CFG,
     )
     assert not ok
     assert "conviction" in reason.lower()
+
+
+def test_ungated_skill_is_exempt_from_conviction_floor_by_default():
+    # Live behaviour since the restructuration: no skill is conviction-gated, so a
+    # slate skill below conviction_min passes the conviction check (it self-selects
+    # at its own extremes upstream instead).
+    ok, _ = selective_gate(
+        "BUY", "BTC/USDC", "ts_mom_vol_scaled",
+        [_sig("ts_mom_vol_scaled", 0.6)], set(), CFG,
+    )
+    assert ok
 
 
 def test_allows_saturated_ts_mom():
@@ -113,7 +130,11 @@ def test_pick_selective_returns_best_qualifying_signal():
     assert p["side"] == "BUY" and p["skill_id"] == "ts_mom_vol_scaled" and p["symbol"] == "BTC/USDC"
 
 
-def test_pick_selective_none_when_low_conviction():
+def test_pick_selective_none_when_low_conviction(monkeypatch):
+    # Mechanism coverage (live set empty since restructuration — see gate test above).
+    from hermes.risk import selective as sel
+
+    monkeypatch.setattr(sel, "_CONVICTION_GATED", {"ts_mom_vol_scaled"})
     assert pick_selective_signal([_ssig("ts_mom_vol_scaled", "BUY", 0.5)], CFG, "BTC/USDC") is None
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -111,6 +112,26 @@ class TradeJournal:
             "avg_win_loss_ratio": ratio,
             "pnl_usd": sum(r.pnl_usd or 0 for r in rows),
         }
+
+    async def count_closed_by_skills(self, skills: Iterable[str]) -> int:
+        """Closed trades whose skill_id is in `skills` — feeds the edge_paper_trades
+        stage gate (RESTRUCTURATION 2026-07-02): only trades from the CURRENT validated
+        slate count toward advancement, so retired/legacy skills (ts_mom_vol_scaled,
+        breakout_vol_expansion, …) can never advance a stage on bull-beta noise."""
+        wanted = set(skills)
+        if not wanted:
+            return 0
+        db = get_db()
+        async with db.session() as s:
+            rows = (
+                await s.execute(
+                    select(JournalRow).where(
+                        JournalRow.closed_at.is_not(None),
+                        JournalRow.skill_id.in_(wanted),
+                    )
+                )
+            ).scalars().all()
+        return len(rows)
 
     async def breakdown(self) -> dict[str, dict]:
         """Per-symbol and per-skill PnL/win-rate over all closed trades — surfaces

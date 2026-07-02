@@ -16,20 +16,27 @@ base_currency: USDC
 stages:
   stage_0_paper:
     venue: paper
-    # perp (not spot) so the paper agent can SHORT — the OOS-validated Strategy #1
-    # is long/short (perps); a spot stage silently rejected every SELL, crippling
-    # the live test to long-only and diverging from the backtest.
+    # perp (not spot) so the paper agent can SHORT — mean_reversion_regime shorts at
+    # upper extremes and the carry pair needs a short-perp leg; a spot stage silently
+    # rejected every SELL, crippling the live test to long-only vs the backtest.
     instruments: perp
     # Paper mode still sizes positions (so we can measure performance).
     # No real money is at risk; cap is conservative to mirror Stage 1 sizing.
     per_trade_risk_cap_pct: 0.5
     # 7-asset universe x 3 sleeves -> raised from 3 so the extra arming converts to
-    # trades (and accumulates toward the 200-paper-trade gate) instead of being
+    # trades (and accumulates toward the edge_paper_trades gate) instead of being
     # capped. At 0.5% risk/trade, 6 concurrent positions = ~3% of equity deployed.
     max_open_positions: 6
     daily_loss_kill_pct: 5.0
     advance_when:
-      paper_trades: 200
+      # RESTRUCTURATION 2026-07-02: the old `paper_trades: 200` counted trades from ANY
+      # skill — a gate fed by the (now retired) drag skill S1 would have advanced stages
+      # on bull-beta noise, which is precisely what the honesty machine exists to prevent.
+      # edge_paper_trades counts ONLY closed trades whose skill_id is in the CURRENT
+      # allowed_skills slate (TradeJournal.count_closed_by_skills). 40 events from a
+      # rare-event book is a multi-year horizon by construction — that is honest, not
+      # slow (docs/RESTRUCTURATION_2026-07.md §3).
+      edge_paper_trades: 40
       walk_forward_sharpe: 1.0
       max_drawdown_pct: 15.0
 
@@ -92,13 +99,20 @@ strategy:
   # DEFAULT OFF — flip selective_mode to true to run it in paper-forward. Enforced
   # deterministically in risk_manager via hermes.risk.selective.selective_gate.
   selective_mode: true         # PAPER-FORWARD: agent trades the OOS-validated rule (stage_0, no real money)
-  # Strategy #1 = momentum (ts_mom + mean_reversion). Strategy #2 = funding_squeeze_continuation
-  # (validated OOS Sharpe ~+1.1, orthogonal rho~0.04). funding is NOT conviction-gated
-  # (it self-selects at funding z>=2), so it is exempt from conviction_min automatically.
+  # RESTRUCTURATION 2026-07-02 (docs/RESTRUCTURATION_2026-07.md §3, operator-approved):
+  # ts_mom_vol_scaled (ex-Strategy #1 momentum) is RETIRED from the slate — the re-audit
+  # (research_crypto2/_book.json) measured it as a bull-beta drag: book LOO-Δ Sharpe −0.146
+  # (the book more than doubles its Sharpe without it) and joint-null p=0.69 (its own trade
+  # basket is indistinguishable from random entry). mean_reversion_regime is a DISTINCT
+  # range skill and stays. Strategy #2 = funding_squeeze_continuation — the one real edge
+  # (joint-null p=0.017; honest magnitudes per the re-audit: per-trade Sharpe ~0.3,
+  # OOS-40 ~0.3 — the old "+1.1" headline was the annualized number, do not quote it bare).
+  # It self-selects at funding z>=2 so it is exempt from conviction_min automatically.
   # #3 funding_carry_harvest is delta-neutral (the paper book routes it STRUCTURALLY
   # to a short-perp+long-spot pair, never a naked order) so it is safe in the slate.
-  allowed_skills: [ts_mom_vol_scaled, mean_reversion_regime, funding_squeeze_continuation, funding_carry_harvest]
-  conviction_min: 1.0          # ts_mom |score| saturation; mean_reversion/funding/carry self-select
+  allowed_skills: [mean_reversion_regime, funding_squeeze_continuation, funding_carry_harvest]
+  conviction_min: 1.0          # floor for conviction-gated skills; the current slate self-selects
+                               # at extremes, so no skill is conviction-gated today (see selective.py)
   no_pyramid: true             # one position per symbol at a time (consolidation)
   # DEFAULT OFF (2026-07-01): the fees: block below says "the paper exchange mirrors
   # the taker fee ... under-charging here would open the gates on a fictional edge" —
@@ -109,7 +123,7 @@ strategy:
   # testnet). Flip back to true only once a real measured fill-rate justifies it.
   maker_orders: false
   decision_timeframe: 4h       # the rule is validated on 4h bars (decision loop + skills)
-  max_hold_bars: 12            # default time exit = 12x4h ~ 48h (Strategy #1 vertical barrier)
+  max_hold_bars: 12            # default time exit = 12x4h ~ 48h (mean_reversion vertical barrier)
   max_hold_bars_by_skill:      # per-strategy horizon overrides (mirror each backtest barrier)
     funding_squeeze_continuation: 24   # Strategy #2 validated on a ~24x4h ~ 96h hold
     funding_carry_harvest: 48          # Strategy #3 delta-neutral carry ~48x4h ~ 8 days

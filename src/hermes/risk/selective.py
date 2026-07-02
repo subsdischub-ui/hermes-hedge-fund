@@ -22,7 +22,10 @@ from dataclasses import dataclass
 # Skills whose conviction (signal strength) is meaningful and must clear the floor.
 # Skills NOT listed here but in the slate (e.g. mean_reversion_regime) self-select
 # at extremes with a fixed confidence and are exempt from the conviction floor.
-_CONVICTION_GATED = {"ts_mom_vol_scaled"}
+# EMPTY since the 2026-07-02 restructuration: ts_mom_vol_scaled (the only conviction-
+# gated skill) was retired from the slate (bull-beta drag — see config allowed_skills
+# comment). The mechanism stays wired for any future conviction-scored skill.
+_CONVICTION_GATED: set[str] = set()
 
 
 @dataclass(frozen=True)

@@ -53,20 +53,21 @@ def test_run_backtest_empty_for_too_short_history():
     assert res.n_trades == 0
 
 
-def test_regime_gate_is_subset_and_keeps_trend_skill_in_trend():
+def test_regime_gate_is_subset_and_gates_out_the_retired_trend_skill():
     # With regime gating, a per-symbol skill's signal is only recorded when that
     # skill is in the active set for the bar's routed regime. Gating can only
-    # REMOVE off-regime trades, never add. A clean uptrend routes to "trend", so
-    # the trend skill ts_mom_vol_scaled is kept (not gated out).
+    # REMOVE off-regime trades, never add. RESTRUCTURATION 2026-07-02: the trend
+    # bucket is EMPTY (ts_mom_vol_scaled retired as a bull-beta drag), so even in a
+    # clean uptrend the regime gate must drop every ts_mom trade — the exact
+    # behaviour the retirement exists to enforce.
     data = {"BTC/USDC": _trend_df(420)}
     ungated = run_backtest(data, horizon=12, warmup=60, step=1, window_cap=350)
     gated = run_backtest(
         data, horizon=12, warmup=60, step=1, window_cap=350, regime_gate=True
     )
     assert gated.n_trades <= ungated.n_trades
-    assert len(gated.returns_by_skill.get("ts_mom_vol_scaled", [])) == len(
-        ungated.returns_by_skill.get("ts_mom_vol_scaled", [])
-    )
+    assert len(ungated.returns_by_skill.get("ts_mom_vol_scaled", [])) > 0
+    assert len(gated.returns_by_skill.get("ts_mom_vol_scaled", [])) == 0
 
 
 def test_skills_allowlist_restricts_active_skills():
