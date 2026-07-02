@@ -36,23 +36,23 @@ if _RFX not in sys.path:
 import fxgate as _fg  # noqa: E402
 
 __all__ = [
-    "expanding_percentile",
-    "rolling_corr",
     "cb_demand_pit",
-    "gold_regime_state",
-    "realrate_shock_events",
-    "flow_divergence",
-    "combined_etf_ounces",
-    "subset_net_mean",
-    "shuffle_label_p",
-    "circular_rotation_p",
-    "conditioning_verdict",
     "cb_demand_signal",
-    "forward_return",
-    "neutral_pair_forward_return",
-    "ic_test",
+    "circular_rotation_p",
+    "combined_etf_ounces",
     "conditional_diversification",
+    "conditioning_verdict",
     "dollar_decoupling_state",
+    "expanding_percentile",
+    "flow_divergence",
+    "forward_return",
+    "gold_regime_state",
+    "ic_test",
+    "neutral_pair_forward_return",
+    "realrate_shock_events",
+    "rolling_corr",
+    "shuffle_label_p",
+    "subset_net_mean",
 ]
 
 
@@ -123,13 +123,13 @@ def gold_regime_state(
 
     Two slow, exogenous axes, each ranked causally and blended:
 
-    * ``coupling`` = −corr(gold returns, ΔDFII10) over ``window`` days. High (strongly
+    * ``coupling`` = -corr(gold returns, ΔDFII10) over ``window`` days. High (strongly
       negative correlation) ⇒ the real-rate fundamental is live; near zero ⇒ decoupled.
       DFII10 carries a ``dfii10_lag_days`` publication lag (the vintage audit proved
       keyless DFII10 is PIT-honest within rounding, so only the lag is needed).
     * ``cb_ann`` = annualised WGC central-bank demand, already availability-dated.
 
-    ``flow_score`` = ½·pct(cb_ann) + ½·(1 − pct(coupling)) ∈ [0, 1] — high when CB
+    ``flow_score`` = ½·pct(cb_ann) + ½·(1 - pct(coupling)) ∈ [0, 1] — high when CB
     buying is historically elevated *and* the real-rate link is historically weak.
     ``state`` = FLOW_CB where ``flow_score`` > ``flow_threshold`` else REAL_RATE; NaN
     while either axis is still in warm-up. Columns: coupling, cb_ann, p_cb, p_coup,
@@ -169,8 +169,8 @@ def realrate_shock_events(
 ) -> list[tuple[int, int]]:
     """Frozen B2: DFII10 ``chg``-day shock z-score → (bar_index, side) events.
 
-    ``z = (Δ_chg DFII10 − roll μ) / roll σ`` over ``zwin`` (ddof=1). z ≤ −z_thr ⇒
-    side +1 (LONG gold: real rates fell), z ≥ +z_thr ⇒ side −1 (SHORT). Entry is the
+    ``z = (Δ_chg DFII10 - roll μ) / roll sigma`` over ``zwin`` (ddof=1). z ≤ -z_thr ⇒
+    side +1 (LONG gold: real rates fell), z ≥ +z_thr ⇒ side -1 (SHORT). Entry is the
     signal date + ``lag_bdays`` business days, mapped to the first ``bar_dt`` at/after
     it (no fill if that bar is > ``max_stale_days`` late); one event per bar. DFII10's
     keyless series is PIT-honest within rounding (vintage audit), so only the entry lag
@@ -208,7 +208,7 @@ def realrate_shock_events(
 def flow_divergence(
     oz: pd.Series, price: pd.Series, *, lookback: int = 60, zwin: int = 60
 ) -> pd.DataFrame:
-    """Frozen B5 variant B: flow-vs-price divergence ``div = zf − zp`` (causal).
+    """Frozen B5 variant B: flow-vs-price divergence ``div = zf - zp`` (causal).
 
     ``zf`` = z-score of the ``lookback``-day growth of ounces-in-trust; ``zp`` = z-score
     of the ``lookback``-day return of the gold price proxy; both z-scored over ``zwin``
@@ -228,7 +228,7 @@ def flow_divergence(
 def combined_etf_ounces(
     gld_oz: pd.Series, iau_shares: pd.Series, iau_nav: pd.Series, gold_px: pd.Series
 ) -> pd.Series:
-    """Combined GLD+IAU ounces-in-trust. IAU is held as shares × NAV ($/share) = AUM
+    """Combined GLD+IAU ounces-in-trust. IAU is held as shares x NAV ($/share) = AUM
     ($), converted to ounces at the gold spot ($/oz); added to GLD's reported ounces.
     The prior B5 used GLD alone — folding in IAU (now in the lake) is the one genuine
     new data increment over the refuted test.
@@ -389,13 +389,13 @@ def cb_demand_signal(cb_quarterly: pd.DataFrame, *, mode: str = "level", lag_day
 
 
 def forward_return(px: pd.Series, horizon: int) -> pd.Series:
-    """Forward simple return over ``horizon`` rows: px[t+h]/px[t] − 1 (NaN past the end)."""
+    """Forward simple return over ``horizon`` rows: px[t+h]/px[t] - 1 (NaN past the end)."""
     px = px.astype(float)
     return px.shift(-horizon) / px - 1.0
 
 
 def neutral_pair_forward_return(long_px: pd.Series, short_px: pd.Series, horizon: int) -> pd.Series:
-    """Forward return of a beta-cancelled long/short pair: fwd(long) − fwd(short). For the CB
+    """Forward return of a beta-cancelled long/short pair: fwd(long) - fwd(short). For the CB
     signal the mechanism-driven neutral leg is gold-vs-silver (central banks buy gold, not
     silver), so this removes the common precious-metals / real-rate / bull-beta and isolates
     whether the signal predicts gold *outperformance*."""
@@ -422,7 +422,7 @@ def ic_test(signal: pd.Series, fwd_ret: pd.Series, *, n_perm: int = 2000, seed: 
     on the last ``oos_frac`` of the timeline. Returns ic, p, n, oos_ic.
 
     CALIBRATION CAVEAT (measured, N=60): this null is well-calibrated for **stationary** inputs
-    (false-positive rate ~0.07 at α=0.05) but **anti-conservative for TRENDING/level inputs**
+    (false-positive rate ~0.07 at alpha=0.05) but **anti-conservative for TRENDING/level inputs**
     (~0.16) — a circularly-shifted trend still trends, so two independent trends spuriously
     rank-align. Apply only to differenced/stationary signals; a level (e.g. a cumulative demand
     level) must be differenced first, or its p is untrustworthy.

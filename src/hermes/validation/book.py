@@ -96,7 +96,7 @@ def causal_inverse_vol_weights(
 def _hrp_weights(cov: np.ndarray) -> np.ndarray:
     """Static Hierarchical Risk Parity weights from a covariance matrix (AFML ch.16).
 
-    López de Prado's recipe: correlation distance d=√((1−ρ)/2), SINGLE-linkage
+    López de Prado's recipe: correlation distance d=√((1-rho)/2), SINGLE-linkage
     agglomerative clustering, quasi-diagonalisation by the dendrogram leaf order,
     then recursive bisection allocating inversely to *cluster* variance. Unlike
     naive inverse-variance, this accounts for correlation — redundant (correlated)

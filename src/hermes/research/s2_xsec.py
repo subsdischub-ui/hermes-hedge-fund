@@ -23,19 +23,19 @@ import pandas as pd
 from hermes.research.s2_positioning import causal_zscore, oi_acceleration_zscore
 
 __all__ = [
+    "build_panel",
+    "build_venue_funding",
+    "bull_bear_regime",
     "cross_sectional_weights",
-    "xsec_backtest",
-    "mc_random_sign_pvalue",
-    "realized_vol_panel",
-    "oi_accel_panel",
+    "daily_regime_on_grid",
     "funding_settled_per_bar",
     "funding_signal_on_grid",
-    "bull_bear_regime",
-    "daily_regime_on_grid",
     "funding_squeeze_directional",
-    "build_panel",
     "load_native_funding",
-    "build_venue_funding",
+    "mc_random_sign_pvalue",
+    "oi_accel_panel",
+    "realized_vol_panel",
+    "xsec_backtest",
 ]
 
 
@@ -108,17 +108,17 @@ def xsec_backtest(
     ``signal_panel`` (causal — values at t use only data <= t), form dollar-neutral
     weights, hold for ``stride`` bars and realise:
 
-      * gross price return  g_t = Σ_i w_i · (close[t+stride]/close[t] − 1)
-      * funding PnL         f_t = Σ_i (−w_i) · (funding settled over bars (t, t+stride])
+      * gross price return  g_t = Σ_i w_i · (close[t+stride]/close[t] - 1)
+      * funding PnL         f_t = Σ_i (-w_i) · (funding settled over bars (t, t+stride])
                             (a LONG of a positive-funding name PAYS; the carry is summed
                             ONCE over the holding window from per-settlement funding —
                             never per-bar-forward-filled, which would double-count)
-      * turnover cost       c_t = (cost_bps/1e4) · Σ_i |w_i − w_i(prev)|  (both legs)
+      * turnover cost       c_t = (cost_bps/1e4) · Σ_i |w_i - w_i(prev)|  (both legs)
 
-    net_t = g_t + f_t − c_t. A name with a non-finite forward target (delisted in the
+    net_t = g_t + f_t - c_t. A name with a non-finite forward target (delisted in the
     window) contributes nothing (cannot be realised), never NaN. Returns a dict with
     ``returns`` (net), ``gross_returns`` (price-only, for the random-sign null),
-    ``weights`` (rebalance × symbol), and ``n_rebals``. Inputs are reindexed onto
+    ``weights`` (rebalance x symbol), and ``n_rebals``. Inputs are reindexed onto
     ``close_panel``'s grid so callers need not pre-align column order.
     """
     close = close_panel

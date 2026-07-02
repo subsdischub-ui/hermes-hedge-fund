@@ -19,7 +19,6 @@ import numpy as np
 import pandas as pd
 
 from hermes.research.harness import evaluate_signal
-from hermes.research.signals import funding_squeeze_continuation
 from hermes.research.s3_universe import (
     arm_threshold_native,
     bear_bull_split,
@@ -31,6 +30,7 @@ from hermes.research.s3_universe import (
     per_asset_null_pvalue,
     walk_trades,
 )
+from hermes.research.signals import funding_squeeze_continuation
 
 
 # --------------------------------------------------------------------------- #

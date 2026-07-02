@@ -43,7 +43,7 @@ def kelly_fraction_from_pwin(
 ) -> float:
     """Fractional-Kelly bet fraction from P(win) and the win/loss payoff ratio b.
 
-    Full Kelly is ``f* = (p·b − q)/b`` with q = 1−p; we return ``fraction · max(0,
+    Full Kelly is ``f* = (p·b - q)/b`` with q = 1-p; we return ``fraction · max(0,
     f*)`` so a non-positive edge bets nothing and a real edge is sized at a fraction
     of full Kelly (drawdown control — full Kelly is famously fragile to estimation
     error in p and b).

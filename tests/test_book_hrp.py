@@ -1,7 +1,7 @@
 """Causal HRP allocator (vector 1.2) — Hierarchical Risk Parity weights computed
 forward-only (zero look-ahead).
 
-The recipe is López de Prado (AFML ch.16): correlation-distance d=√((1−ρ)/2),
+The recipe is López de Prado (AFML ch.16): correlation-distance d=√((1-rho)/2),
 SINGLE-linkage agglomerative clustering, quasi-diagonalisation by the dendrogram
 leaf order, then recursive bisection allocating inversely to *cluster* variance.
 The value over naive inverse-variance is that HRP accounts for correlation: it
@@ -17,7 +17,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from hermes.validation.book import (
     _hrp_weights,

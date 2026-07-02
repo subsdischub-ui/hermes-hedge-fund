@@ -97,7 +97,7 @@ def test_xsec_backtest_gross_is_long_short_spread():
 
 
 def test_xsec_backtest_charges_two_leg_turnover_cost():
-    """Establishing the book from flat costs cost_bps × gross turnover (=1.0 here)."""
+    """Establishing the book from flat costs cost_bps x gross turnover (=1.0 here)."""
     idx, close = _flat_panel(n=12)
     sig = pd.DataFrame(np.tile([2.0, 1.0, 0.0, 0.0, -1.0, -2.0], (12, 1)),
                        index=idx, columns=list(close.columns))
@@ -110,7 +110,7 @@ def test_xsec_backtest_charges_two_leg_turnover_cost():
 
 
 def test_xsec_backtest_funding_cost_charged_once_per_holding_not_per_bar():
-    """Funding PnL = Σ (−w_i)·(funding settled over the holding window). A LONG of a
+    """Funding PnL = Σ (-w_i)·(funding settled over the holding window). A LONG of a
     positive-funding name PAYS; the carry is summed over the held bars, never double-
     counted from a forward-filled rate."""
     idx, close = _flat_panel(n=8)

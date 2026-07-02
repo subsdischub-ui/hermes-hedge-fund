@@ -177,13 +177,13 @@ def factor_neutrality(spread_returns: pd.Series, factor_returns: pd.Series) -> d
     """
     df = pd.concat([spread_returns, factor_returns], axis=1, keys=["s", "f"]).dropna()
     if len(df) < 2:
-        return {"beta": 0.0, "rho": 0.0, "n": int(len(df))}
+        return {"beta": 0.0, "rho": 0.0, "n": len(df)}
     s, f = df["s"].to_numpy(), df["f"].to_numpy()
     var_f = float(np.var(f, ddof=1))
     beta = float(np.cov(s, f, ddof=1)[0, 1] / var_f) if var_f > 0 else 0.0
     sd_s, sd_f = float(np.std(s, ddof=1)), float(np.std(f, ddof=1))
     rho = float(np.corrcoef(s, f)[0, 1]) if sd_s > 0 and sd_f > 0 else 0.0
-    return {"beta": beta, "rho": rho, "n": int(len(df))}
+    return {"beta": beta, "rho": rho, "n": len(df)}
 
 
 def pair_usd_value(close: pd.Series, quote: str) -> pd.Series:

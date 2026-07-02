@@ -13,6 +13,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
+pytest.importorskip(
+    "fxgate",
+    reason="s6_gold_regime imports the standalone lab module fxgate (research_fx/, gitignored) — absent in CI",
+)
 from hermes.research import s6_gold_regime as s6
 
 

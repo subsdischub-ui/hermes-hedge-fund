@@ -1,13 +1,13 @@
 """Stream 9 — cross-book orthogonality, HRP allocation, anti-black-swan overlay (SHADOW).
 
 Realises "un seul Hermès, deux livres, un cerveau": measure crypto↔FX orthogonality at the
-**regime level** (not raw ρ), allocate risk **cross-book** (HRP), test whether a sleeve diversifies
+**regime level** (not raw rho), allocate risk **cross-book** (HRP), test whether a sleeve diversifies
 the **global** book (LOO double condition), and design + **cost** a shared circuit-breaker overlay.
 
 Doctrine baked in:
-  * MEASURE ≠ ALLOCATE — the ρ matrix ingests every sleeve (incl. dead/fragile ones, to reproduce the
-    S1×S2=0.35 demasking); the HRP allocator weights ONLY the confirmed/orthogonal subset.
-  * ρ DATÉ ≠ ρ BRUT — a pair is killed on max(|daily|, |weekly|, |risk_off|) ≥ 0.30.
+  * MEASURE ≠ ALLOCATE — the rho matrix ingests every sleeve (incl. dead/fragile ones, to reproduce the
+    S1xS2=0.35 demasking); the HRP allocator weights ONLY the confirmed/orthogonal subset.
+  * rho DATÉ ≠ rho BRUT — a pair is killed on max(|daily|, |weekly|, |risk_off|) ≥ 0.30.
   * CONDITIONER ≠ ALPHA — the overlay is tail-risk reduction; it must improve Calmar/drawdown WITHOUT
     bleeding net Sharpe, else the trigger is dropped.
   * SHADOW size-0 — nothing here trades or wires into the live loop. Pulse registration and overlay
@@ -35,16 +35,35 @@ LAKE = "data/hermes_datalake.duckdb"
 Book = Literal["crypto", "fx"]
 
 __all__ = [
-    "run_sleeve", "sleeve_daily_returns",
-    "max_drawdown", "calmar_ratio",
-    "PairOrtho", "pair_ortho", "regime_orthogonality", "orthogonality_kill_matrix",
-    "is_orthogonal", "demask_report", "risk_off_mask",
-    "correlation_distance", "hrp_quasidiag_order", "hrp_recursive_bisection", "hrp_allocate",
-    "OverlayConfig", "vol_spike_trigger", "gap_trigger", "depeg_trigger", "cross_dd_trigger",
-    "exposure_multiplier", "apply_overlay", "overlay_cost_report",
-    "native_loo", "global_loo", "cross_book_diversifiers",
+    "OverlayConfig",
+    "PairOrtho",
+    "apply_overlay",
+    "attach_funding",
+    "calmar_ratio",
+    "correlation_distance",
+    "cross_book_diversifiers",
+    "cross_dd_trigger",
+    "demask_report",
+    "depeg_trigger",
+    "exposure_multiplier",
+    "gap_trigger",
+    "global_loo",
+    "hrp_allocate",
+    "hrp_quasidiag_order",
+    "hrp_recursive_bisection",
+    "is_orthogonal",
+    "load_klines",
+    "max_drawdown",
+    "native_loo",
+    "orthogonality_kill_matrix",
+    "overlay_cost_report",
+    "pair_ortho",
+    "regime_orthogonality",
+    "risk_off_mask",
+    "run_sleeve",
     "s9_pulse_emitter",
-    "load_klines", "attach_funding",
+    "sleeve_daily_returns",
+    "vol_spike_trigger",
 ]
 
 
@@ -167,7 +186,7 @@ def dated_correlation(a: pd.Series, b: pd.Series, freq: str = "W") -> float:
 
 
 def regime_conditional_correlation(a: pd.Series, b: pd.Series, risk_off_mask: pd.Series) -> float:
-    """Pearson computed ONLY inside risk-off periods — catches ρ that blows toward +1 in co-crashes."""
+    """Pearson computed ONLY inside risk-off periods — catches rho that blows toward +1 in co-crashes."""
     av, bv = _align_pair(a, b)
     m = risk_off_mask.reindex(av.index).fillna(False).astype(bool)
     if m.sum() < 2:
@@ -214,7 +233,7 @@ def regime_orthogonality(returns: dict[str, pd.Series], risk_off_mask: pd.Series
 
 def orthogonality_kill_matrix(returns: dict[str, pd.Series], risk_off_mask: pd.Series,
                               weekly_freq: str = "W") -> pd.DataFrame:
-    """Symmetric matrix of the binding rho_kill (diagonal 1.0) — the live ρ matrix for the dashboard."""
+    """Symmetric matrix of the binding rho_kill (diagonal 1.0) — the live rho matrix for the dashboard."""
     ids = list(returns)
     M = pd.DataFrame(np.eye(len(ids)), index=ids, columns=ids)
     for pair, po in regime_orthogonality(returns, risk_off_mask, weekly_freq).items():
@@ -251,7 +270,7 @@ def risk_off_mask(market_proxy_returns: pd.Series, vol_z_max: float = 1.5,
 
 
 # =========================================================================== #
-# L2 — HRP cross-book allocator (cluster on max-ρ, size on daily covariance)
+# L2 — HRP cross-book allocator (cluster on max-rho, size on daily covariance)
 # =========================================================================== #
 def _rho_link_matrix(returns: dict[str, pd.Series], ortho: dict[frozenset, PairOrtho]) -> pd.DataFrame:
     ids = list(returns)
@@ -263,14 +282,14 @@ def _rho_link_matrix(returns: dict[str, pd.Series], ortho: dict[frozenset, PairO
 
 
 def correlation_distance(corr: pd.DataFrame) -> pd.DataFrame:
-    """López de Prado distance d = sqrt((1 - ρ)/2). Clipped to [0,1]; zero diagonal."""
+    """López de Prado distance d = sqrt((1 - rho)/2). Clipped to [0,1]; zero diagonal."""
     d = np.sqrt(np.clip((1.0 - corr.to_numpy()) / 2.0, 0.0, 1.0))
     np.fill_diagonal(d, 0.0)
     return pd.DataFrame(d, index=corr.index, columns=corr.columns)
 
 
 def hrp_quasidiag_order(dist: pd.DataFrame, method: str = "single") -> list[str]:
-    """Quasi-diagonal leaf order from hierarchical clustering on the (max-ρ) distance matrix."""
+    """Quasi-diagonal leaf order from hierarchical clustering on the (max-rho) distance matrix."""
     link = _sch.linkage(_squareform(dist.to_numpy(), checks=False), method=method)
     return [dist.index[i] for i in _sch.leaves_list(link)]
 
@@ -281,7 +300,7 @@ def _ivp(cov: np.ndarray) -> np.ndarray:
 
 
 def _cluster_var(cov: pd.DataFrame, items: list[str]) -> float:
-    """Cluster variance wᵀVw on the REAL daily covariance (PSD) — NOT the non-PSD max-ρ matrix."""
+    """Cluster variance wᵀVw on the REAL daily covariance (PSD) — NOT the non-PSD max-rho matrix."""
     sub = cov.loc[items, items].to_numpy()
     w = _ivp(sub)
     return float(w @ sub @ w)
@@ -310,7 +329,7 @@ def hrp_allocate(returns: dict[str, pd.Series], *, confirmed_ids: set[str],
                  risk_off_mask: pd.Series, weekly_freq: str = "W") -> dict[str, float]:
     """HRP weights over the CONFIRMED subset only (measure-all / allocate-confirmed, adjustment #1).
 
-    Clustering/order on the tail-aware max-ρ distance; sizing on the causal daily covariance
+    Clustering/order on the tail-aware max-rho distance; sizing on the causal daily covariance
     (adjustment #2). Non-confirmed sleeves receive an explicit 0.0."""
     weights = {s: 0.0 for s in returns}
     conf = [s for s in returns if s in confirmed_ids]
@@ -321,7 +340,7 @@ def hrp_allocate(returns: dict[str, pd.Series], *, confirmed_ids: set[str],
         return weights
     sub = {s: returns[s] for s in conf}
     ortho = regime_orthogonality(sub, risk_off_mask, weekly_freq)
-    dist = correlation_distance(_rho_link_matrix(sub, ortho))   # CLUSTER on max-ρ
+    dist = correlation_distance(_rho_link_matrix(sub, ortho))   # CLUSTER on max-rho
     order = hrp_quasidiag_order(dist)
     cov = align_sleeves(sub).cov()                             # SIZE on causal daily covariance
     for s, v in hrp_recursive_bisection(cov, order).items():
@@ -491,7 +510,7 @@ def cross_book_diversifiers(crypto: dict[str, pd.Series], fx: dict[str, pd.Serie
 # =========================================================================== #
 def s9_pulse_emitter(kill_matrix: pd.DataFrame, hrp_weights: dict[str, float],
                      overlay_state: dict) -> dict:
-    """Read-only shadow payload (live ρ matrix, HRP weights, overlay state). Registration into the
+    """Read-only shadow payload (live rho matrix, HRP weights, overlay state). Registration into the
     live pulse is a documented one-line human merge step — this module never touches pulse.py."""
     return {"kind": "s9_cross_book", "shadow": True,
             "rho_max": {} if kill_matrix.empty else kill_matrix.round(3).to_dict(),
