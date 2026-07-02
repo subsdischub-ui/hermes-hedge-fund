@@ -604,7 +604,15 @@ def _restructuration_chat_block(s, edge_count: int) -> str:
         f"  - Métaux (XAU/XAG) : collect-now, "
         f"re-test {r['metals_collect_now']['retest_deadline']} (couperet: {r['metals_collect_now']['kill_rule']}).\n"
         f"  - FX : {r['fx']['status']}, réouverture vérifiée {r['fx']['reopen_check']}.\n"
-        f"  - Couperet global du narratif « revenu par trading » : {r['global_cutoff']}."
+        + (
+            f"  - Test de LARGEUR S2 (élargir la règle funding gelée à 12 perps liquides, "
+            f"{bt.get('date')}) : verdict {bt.get('verdict')} — malgré "
+            f"+{bt.get('marginal_events_pct')}% d'événements marginaux et joint-null "
+            f"p={bt.get('joint_null_p_max5')}, le PREREG à zéro tolérance s'applique. "
+            f"Réserves : {', '.join(bt.get('reserves', []))}. Suite : {bt.get('next')}.\n"
+            if (bt := r.get("breadth_test")) else ""
+        )
+        + f"  - Couperet global du narratif « revenu par trading » : {r['global_cutoff']}."
     )
 
 
