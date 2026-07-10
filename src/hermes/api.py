@@ -651,6 +651,18 @@ def _restructuration_chat_block(s, edge_count: int) -> str:
             + ".\n"
             if (la := r.get("lake_axes")) else ""
         )
+        + (
+            "  - Système autonome (inventaire 2026-07-10, docs/SYSTEME_AUTONOME.md) : venue "
+            "d'exécution des étages RÉELS (1/2/3) = binanceusdm (le compte possédé + le venue "
+            "de backtest ; adapter réel écrit, refuse sans clés, carry jamais nu). Trois défauts "
+            "de fidélité backtest/live corrigés ce jour : (a) no-pyramid désormais par "
+            "(symbole, skill) et non par symbole seul — S2 n'est plus étranglée par un symbole "
+            "tenu par mean_reversion ; (b) le plancher de confiance n'étrangle plus les sleeves "
+            "auto-sélectives (S2 s'arme bien à z>=2, plus à z>=2.2) ; (c) une panne LLM ne "
+            "suspend plus le tick — la règle déterministe décide (LLM advisory). Constats "
+            "restants avant tout passage réel : blackout macro FOMC/CPI, circuit-breaker "
+            "multi-jours, jambe spot carry réelle, statut TRM.\n"
+        )
         + f"  - Couperet global du narratif « revenu par trading » : {r['global_cutoff']}."
     )
 

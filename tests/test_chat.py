@@ -106,6 +106,8 @@ async def test_chat_context_carries_restructuration_facts():
     assert "0.146" in ctx  # LOO-Δ Sharpe
     assert "0.507" in ctx  # joint-null p (post-fix look-ahead 2026-07-02)
     assert "LARGEUR S2" in ctx and "ÉCHEC" in ctx  # le verdict largeur est racontable au chat
+    assert "binanceusdm" in ctx  # venue d'exécution des étages réels, racontable au chat
+    assert "no-pyramid" in ctx  # les défauts de sûreté corrigés sont racontables au chat
     # The gate, so it can answer "c'est quoi le gate maintenant ?"
     assert "edge_paper_trades" in ctx or "40" in ctx
     # Dated deadlines for metals/FX/global cutoff.
