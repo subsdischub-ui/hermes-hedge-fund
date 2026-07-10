@@ -4,6 +4,8 @@ per symbol (consolidation), dropping skills that lose even gross. Default OFF.""
 
 from __future__ import annotations
 
+import pytest
+
 from hermes.risk.selective import (
     SelectiveConfig,
     drive_signal,
@@ -215,3 +217,25 @@ def test_drive_signal_none_when_all_held():
     sigs = [_ssig("ts_mom_vol_scaled", "BUY", 1.0)]
     det = drive_signal(sigs, CFG_AB, "BTC/USDC", {("BTC/USDC", "ts_mom_vol_scaled")})
     assert det is None
+
+
+# --- Résilience LLM (audit sûreté 2026-07-10) --------------------------------
+@pytest.mark.asyncio
+async def test_trader_defaults_to_hold_when_llm_is_down(monkeypatch):
+    """Si le LLM (primaire + fallback) est injoignable au tick, trader.run doit
+    produire un HOLD par défaut au lieu de laisser l'exception avorter le tick —
+    sinon le driver déterministe (selective_mode) de risk_manager n'est jamais
+    atteint et même l'ancre validée S2 ne peut pas trader. Le LLM est advisory :
+    sa panne ne doit pas suspendre le plan de trading déterministe."""
+    from hermes.agents import trader
+    from hermes.graph.state import HermesState
+
+    class _DeadRouter:
+        async def chat(self, **kwargs):
+            raise RuntimeError("all LLM targets unreachable")
+
+    monkeypatch.setattr(trader, "get_router", lambda: _DeadRouter())
+    state = HermesState(symbol="BTC/USDT:USDT", timeframe="4h")
+    out = await trader.run(state)
+    assert out.trader_proposal["side"] == "HOLD"
+    assert "LLM" in out.trader_proposal["thesis"] or "llm" in out.trader_proposal["thesis"]

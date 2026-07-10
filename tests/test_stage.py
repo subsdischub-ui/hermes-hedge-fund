@@ -46,3 +46,20 @@ def test_edge_gate_ignores_legacy_trade_count():
     target, observed, passed = rep.gates["edge_paper_trades"]
     assert (target, observed, passed) == (40, 3, False)
     assert rep.can_advance is False
+
+
+def test_evaluate_never_mutates_the_stage_even_when_all_gates_pass(monkeypatch):
+    """Garantie manuel-only (R3) : evaluate() avec tous les gates au vert doit
+    RECOMMANDER l'avancement sans jamais écrire settings.stage — l'avancement de
+    stage est une action opérateur (HERMES_STAGE), jamais programmatique."""
+    from hermes.settings import get_settings
+
+    before = get_settings().stage
+    mgr = StageManager()
+    rep = mgr.evaluate({
+        "edge_paper_trades": 999,
+        "walk_forward_sharpe": 5.0,
+        "max_drawdown_pct": 1.0,
+    })
+    assert rep.can_advance is True
+    assert get_settings().stage == before  # jamais muté

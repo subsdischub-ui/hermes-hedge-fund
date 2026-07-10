@@ -193,17 +193,21 @@ def _build_registry() -> dict[str, Skill]:
         ),
         "funding_squeeze_continuation": Skill(
             id="funding_squeeze_continuation",
-            description="Strategy #2 (validated OOS): extreme-positive perp funding (|z|>=2 over 180 bars) marks leveraged-demand trend continuation; LONG, ~24-bar hold. Orthogonal to momentum (daily-PnL rho~0.04). Needs a funding_rate column (attached live from Binance USDT-M).",
+            description="Strategy #2 — the book's ONE real edge (basket joint-null p=0.0005 post-gatefix 2026-07-02): extreme-positive perp funding (z>=2 over 180 bars) marks leveraged-demand continuation; LONG, ~24-bar hold. Honest magnitudes per the 2026-06-25 re-audit: per-trade Sharpe ~0.3, OOS-40 ~0.3; weekly book rho to momentum was 0.35 (the old daily ~0.04 understated regime crowding). Needs a funding_rate column (attached live from Binance USDT-M).",
             fn=funding_squeeze_continuation,
         ),
         "funding_carry_harvest": Skill(
             id="funding_carry_harvest",
-            # Strategy #3 (validated OOS Sharpe +2.4..+4.5, orthogonal to #1 & #2,
-            # calm-market active) — but DISPLAY-ONLY: always HOLD and intentionally
-            # absent from strategy.allowed_skills, because it only works DELTA-NEUTRAL
-            # (naked perp short is OOS-negative). Registered so the dashboard can show
-            # its gauge; promote only after a spot-hedge execution leg exists.
-            description="Strategy #3 (validated, NOT yet tradable): delta-neutral funding carry. Display-only gauge; needs a short-perp+long-spot hedge leg before it can trade.",
+            # Strategy #3 — TRADABLE and in strategy.allowed_skills (the old
+            # "DISPLAY-ONLY: always HOLD" comment here was stale/wrong — audit
+            # 2026-07-10): the signal emits BUY at funding_bps>=2 and the paper
+            # exchange routes it STRUCTURALLY to a delta-neutral short-perp+long-spot
+            # pair (paper.py), never a naked order (naked is OOS-negative on 9y).
+            # RESTATED per the 2026-06-25 re-audit: at honest 30bps two-leg taker the
+            # edge is thin (+16..+23bps/trade, OOS-40 ~0) — healthy only with maker
+            # execution (~12bps), hence effectively HOLD-most-of-the-time in calm
+            # funding. Real-venue carry execution is NOT wired (paper-only guard).
+            description="Strategy #3: delta-neutral funding carry (short perp + long spot, structurally paired — never naked). Thin at taker cost (re-audit: +16..+23bps/trade, OOS-40 ~0); arms only at funding_bps>=2.",
             fn=funding_carry_harvest,
         ),
         "breakout_vol_expansion": Skill(

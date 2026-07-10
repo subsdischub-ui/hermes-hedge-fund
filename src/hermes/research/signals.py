@@ -261,17 +261,19 @@ def funding_squeeze_continuation(df: pd.DataFrame) -> SkillSignal:
 
 
 # --------------------------------------------------------------------------- #
-# funding_carry_harvest — Strategy #3 candidate: DELTA-NEUTRAL funding carry
-#    (classic cash-and-carry). Validated OOS Sharpe +2.4..+4.5, every fold
-#    positive, 3/3 assets, orthogonal to BOTH momentum (rho~0.05) and the squeeze
-#    sleeve (rho~0.05-0.10), and ACTIVE in calm markets (funding is positive ~80%
-#    of the time). BUT it only works HEDGED: a 9y test proved that as a NAKED perp
-#    short (all a perp-only venue can do) the edge is OOS-NEGATIVE — the price loss
-#    in the bull markets where funding is high dwarfs the carry. So this signal is
-#    DISPLAY/RESEARCH-ONLY: it is registered so the dashboard can show the carry
-#    gauge, but it is deliberately kept OUT of strategy.allowed_skills and ALWAYS
-#    returns HOLD, so it can NEVER place a (losing) naked trade. Promoting it to a
-#    live sleeve requires a delta-neutral execution leg (short perp + long spot).
+# funding_carry_harvest — Strategy #3: DELTA-NEUTRAL funding carry (classic
+#    cash-and-carry). RESTATED per the 2026-06-25 re-audit: at honest 30bps
+#    two-leg taker cost the edge is THIN (+16..+23bps/trade, OOS-40 ~0) — the old
+#    "+2.4..+4.5 OOS" headline does not reproduce at honest cost; healthy only
+#    with maker execution (~12bps). It only works HEDGED: a 9y test proved that
+#    as a NAKED perp short the edge is OOS-NEGATIVE. STATUS (corrected
+#    2026-07-10 — the old "DISPLAY-ONLY / always HOLD / kept OUT of
+#    allowed_skills" comment here was stale and FALSE): the signal IS in
+#    strategy.allowed_skills and emits BUY at bps>=2; safety is STRUCTURAL, not
+#    declarative — the paper exchange routes this skill_id unconditionally to a
+#    short-perp+long-spot pair (paper.py _open_carry) and the real Binance
+#    adapter raises NotImplementedError for it, so a naked order is impossible
+#    on every wired venue.
 # --------------------------------------------------------------------------- #
 _CARRY_ARM_BPS = 2.0  # per-8h funding (bps) at/above which the carry trade arms
 

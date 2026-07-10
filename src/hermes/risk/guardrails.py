@@ -130,7 +130,22 @@ class RiskEngine:
             return self._hard_reject("HOLD action — nothing to execute")
         if proposal.symbol not in self.universe:
             return self._hard_reject(f"symbol {proposal.symbol} not in universe")
-        if proposal.confidence < self.confidence_floor:
+        # Confidence floor — two legitimate roles only: (a) a TRM halt forces
+        # confidence to 0 and MUST always reject, any skill; (b) LLM-sourced
+        # proposals (empty skill_id) below the floor are rejected. SELF-SELECTING
+        # slate skills are exempt above zero: their arming threshold IS their
+        # validation (S2 arms at funding z>=2 -> conf z/4 = 0.50; carry arms at
+        # bps>=2 -> conf bps/10 = 0.20). Applying the generic 0.55 floor on top
+        # silently narrowed the VALIDATED thresholds (audit 2026-07-10: S2 live
+        # was effectively z>=2.2, carry bps>=5.5) — the same backtest/live
+        # fidelity defect class as the maker-fee bug. Conviction-gated skills
+        # (risk/selective._CONVICTION_GATED) keep the floor.
+        if proposal.confidence <= 0.0:
+            return self._hard_reject("confidence 0 — TRM halt or empty proposal")
+        from hermes.risk.selective import _CONVICTION_GATED
+
+        self_selecting = bool(proposal.skill_id) and proposal.skill_id not in _CONVICTION_GATED
+        if not self_selecting and proposal.confidence < self.confidence_floor:
             return self._hard_reject(
                 f"confidence {proposal.confidence:.2f} < floor {self.confidence_floor:.2f}"
             )
@@ -153,16 +168,24 @@ class RiskEngine:
         max_open = int(self.stage_cfg.get("max_open_positions", 3))
         if len(positions) >= max_open:
             return self._hard_reject(f"max open positions {max_open} reached")
-        if any(p.symbol == proposal.symbol for p in positions):
+        # No-pyramid per (symbol, skill_id) — NOT per symbol alone. The book is keyed
+        # symbol::skill_id by design (paper.py, stop_watcher.py) and selective.py tests
+        # pin that momentum holding BTC must not starve funding on BTC. The old
+        # per-symbol-only check silently neutralised that multi-sleeve design (audit
+        # 2026-07-10, proved by execution). Aggregate stacking stays bounded by
+        # max_open_positions above and the correlation haircut in sizing.
+        if any(
+            p.symbol == proposal.symbol and (p.skill_id or "") == (proposal.skill_id or "")
+            for p in positions
+        ):
             return self._hard_reject(f"already have open position on {proposal.symbol}")
 
         # paper mode: enforce paper venue at stage 0
         if self.stage_cfg.get("venue", "paper") == "paper" and exchange.name != "paper":
             return self._hard_reject("stage_0_paper but exchange is not paper — refusing live trade")
 
-        # Spot-stage gate: SELL is only allowed to close an existing long. Since
-        # the per-symbol pyramiding check above already rejects when a position
-        # exists, a SELL with no existing position cannot be opened on spot.
+        # Spot-stage gate: SELL is never an opening order on a spot-only stage —
+        # rejected outright here (closes go through close_position, not evaluate()).
         if (
             self.settings.stage in self.SPOT_ONLY_STAGES
             and self.stage_cfg.get("instruments", "spot") == "spot"
