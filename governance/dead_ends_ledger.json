@@ -12,7 +12,8 @@
       "trend following gold",
       "tsmom gold",
       "gold tsmom",
-      "gold momentum"
+      "gold momentum",
+      "gold trend following"
     ]
   },
   {
@@ -200,7 +201,8 @@
       "feature-zoo",
       "gbm logit gold",
       "ml feature zoo",
-      "d1 feature zoo"
+      "d1 feature zoo",
+      "feature-zoo combination"
     ]
   },
   {
@@ -344,7 +346,8 @@
       "liquidation cascade",
       "liquidation flush",
       "forced liquidation reversion",
-      "liquidation rebound"
+      "liquidation rebound",
+      "liquidation cascade reversion"
     ]
   },
   {
@@ -442,7 +445,8 @@
       "funding_squeeze on 1d",
       "funding squeeze 1d",
       "universe expansion funding",
-      "1d universe"
+      "1d universe",
+      "funding_squeeze on 1d bars"
     ]
   },
   {
@@ -490,7 +494,8 @@
       "hawk dove drift",
       "tone drift",
       "llm tone",
-      "fed tone drift"
+      "fed tone drift",
+      "hawk/dove"
     ]
   },
   {
@@ -523,7 +528,8 @@
       "funding-xs",
       "xs funding",
       "funding cross sectional",
-      "cross sectional funding"
+      "cross sectional funding",
+      "cross-sectional funding continuation"
     ]
   },
   {
@@ -555,7 +561,8 @@
       "oi-growth",
       "open-interest growth",
       "open interest growth",
-      "oi growth xs"
+      "oi growth xs",
+      "open-interest growth cross-sectional"
     ]
   },
   {

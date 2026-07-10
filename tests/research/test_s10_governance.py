@@ -486,3 +486,66 @@ def test_forward_does_not_rescue_a_failing_in_sample_sleeve():
     v = gov.PromotionBar().evaluate_with_forward(ev, fwd)
     assert v.verdict is gov.Verdict.REJECT
     assert "deflated_sharpe" in v.failed
+
+
+# =========================================================================== #
+# Durcissement du matching du ledger (incident 2026-07-03, research_toplsr/JOURNAL_taker.md)
+# =========================================================================== #
+def test_ledger_does_not_false_block_on_single_generic_tag_collision():
+    """RÉGRESSION de l'incident réel du 2026-07-03 : un proposal taker-perp contenant
+    littéralement la phrase « short-horizon continuation » (tag d'une entrée OHLCV sans
+    rapport sémantique) déclenchait BLOCKED par collision de sous-chaîne unique. Un seul
+    tag générique (<4 mots) ne suffit plus — il faut ≥2 tags distincts, le nom de
+    l'entrée, ou un tag ultra-spécifique (≥4 mots). NOTE : depuis le kill #38
+    (taker_perp_prereg), cette hypothèse est un mort LÉGITIME — le test vérifie donc
+    (a) que la collision OHLCV est corrigée (ledger sans #38 → NOT-A-DEAD-END) et
+    (b) que le ledger complet bloque via #38, le bon mort, pas via la collision."""
+    incident_proposal = (
+        "perpetual futures aggressive taker flow imbalance extreme z-score directional "
+        "signal, source coinglass taker volume perp exchange-aggregated buy USD notional "
+        "vs sell USD notional, informed aggressor flow hypothesis with a short-horizon "
+        "continuation hypothesis"
+    )
+    full = gov.DeadEndsLedger.load()
+    sans_38 = gov.DeadEndsLedger(
+        entries=[e for e in full.entries() if "taker_perp_prereg" not in e.name]
+    )
+    res_sans = sans_38.check(incident_proposal)
+    assert res_sans["verdict"] is gov.LedgerVerdict.NOT_A_DEAD_END, res_sans["matched"]
+    res_full = full.check(incident_proposal)
+    assert res_full["verdict"] is gov.LedgerVerdict.BLOCKED
+    assert "taker_perp_prereg" in (res_full["matched"] or "")
+
+
+def test_ledger_single_hit_on_taker_buy_volume_tag_does_not_block_perp_axis():
+    """Le tag « taker buy volume » du kill #18 (SPOT-OFI) ne doit pas bloquer seul un
+    proposal sur l'axe perp disjoint qui mentionne la phrase en passant."""
+    ledger = gov.DeadEndsLedger.load()
+    res = ledger.check(
+        "a perp-exchange aggregated flow study that references the taker buy volume series"
+    )
+    assert res["verdict"] is gov.LedgerVerdict.NOT_A_DEAD_END, res["matched"]
+
+
+def test_ledger_still_blocks_faithful_respend_of_every_entry_by_name():
+    """Propriété : re-proposer un mort PAR SON NOM reste BLOCKED pour chacune des entrées —
+    le durcissement ne doit ouvrir aucune porte aux vrais morts."""
+    ledger = gov.DeadEndsLedger.load()
+    for e in ledger.entries():
+        res = ledger.check(f"re-run the {e.name} idea as-is")
+        assert res["verdict"] is gov.LedgerVerdict.BLOCKED, e.name
+
+
+def test_ledger_word_boundary_prevents_inner_substring_hits():
+    """Les tags courts ne matchent qu'en mots entiers : « profit » ne contient pas le
+    tag « ofi » au sens du matching (frontières de mots), « apricot » ne contient pas
+    « cot »."""
+    custom = gov.DeadEndsLedger(entries=[
+        gov.DeadEnd("Synthetic OFI dead end", "crypto", "2026", "t", "d", "k", "r",
+                    tags=("ofi", "cvd")),
+    ])
+    assert custom.check("maximize profit with cvdiscipline")["verdict"] \
+        is gov.LedgerVerdict.NOT_A_DEAD_END
+    # deux tags en mots entiers -> BLOCKED
+    assert custom.check("an ofi and cvd microstructure respend")["verdict"] \
+        is gov.LedgerVerdict.BLOCKED

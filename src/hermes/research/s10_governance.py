@@ -37,6 +37,7 @@ self-contained) and can be overridden from JSON artifacts under ``research_strea
 from __future__ import annotations
 
 import json
+import re
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -583,7 +584,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "MC random-entry null beats it; 26y net-NEGATIVE; loses 2011-15 bear",
         "A non-price trend confirmation on an independent channel that de-betas gold's secular "
         "drift, or a trend test on an instrument without a 25y secular uptrend.",
-        tags=("gold trend", "trend following gold", "tsmom gold", "gold tsmom", "gold momentum"),
+        tags=("gold trend", "gold trend following", "trend following gold", "tsmom gold", "gold tsmom", "gold momentum"),
     ),
     DeadEnd(
         "B1 COT positioning-extreme contrarian", "fx_metals", "2026-06-24 (Loop 3)",
@@ -705,7 +706,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "A genuinely NEW orthogonal feature carrying directional info absent from the 8-feature zoo "
         "(intraday CME order-flow, OTC skew, COMEX inventory, a real (actual,forecast) panel). "
         "Re-running ML over the same exhausted features is forbidden.",
-        tags=("feature zoo", "ml combination", "feature-zoo", "gbm logit gold", "ml feature zoo",
+        tags=("feature zoo", "ml combination", "feature-zoo", "feature-zoo combination", "gbm logit gold", "ml feature zoo",
               "d1 feature zoo"),
     ),
     DeadEnd(
@@ -797,7 +798,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "joint-null p=0.907 (bull-beta) on the OHLCV proxy",
         "Real coinglass_liquidation history (≥2019, size/cluster) with STRICT bull/bear separation "
         "(the authorised re-test). If it again survives only in the bull leg → dead again.",
-        tags=("liquidation cascade", "liquidation flush", "forced liquidation reversion", "liquidation rebound"),
+        tags=("liquidation cascade", "liquidation cascade reversion", "liquidation flush", "forced liquidation reversion", "liquidation rebound"),
     ),
     DeadEnd(
         "Options-surface grid (VRP/TERM/VOV/RSKEW, 1024 configs)", "crypto", "from STREAM_04",
@@ -861,7 +862,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "0/7 pass MC-null on 1d; AVAX mono-instrument; mean_reversion_regime LOO −0.14",
         "A lake with 4h history for the wider universe (the validated cadence), or a new instrument that "
         "passes on its own distinct channel. Never lower z to force a pass.",
-        tags=("funding_squeeze on 1d", "funding squeeze 1d", "universe expansion funding", "1d universe"),
+        tags=("funding_squeeze on 1d", "funding_squeeze on 1d bars", "funding squeeze 1d", "universe expansion funding", "1d universe"),
     ),
     DeadEnd(
         "S4.3 VRP-DVOL sizing gate", "crypto", "2026 (Stream 4 outcome)",
@@ -893,7 +894,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "DSR 0.483<0.5; dovish leg = beta; rates MC-p 0.144; lexicon MC-p 0.085",
         "A tone signal that (a) replicates under a frozen pre-sample lexicon (no LLM look-ahead), (b) is "
         "two-sided not easing-regime beta, and (c) carries a 2nd distinct channel (rates, not just price).",
-        tags=("cb tone", "central-bank tone", "hawk dove drift", "tone drift", "llm tone", "fed tone drift"),
+        tags=("cb tone", "central-bank tone", "hawk dove drift", "tone drift", "hawk/dove", "llm tone", "fed tone drift"),
     ),
     DeadEnd(
         "S8 regime conditioning of funding_squeeze (HMM/BOCPD)", "crypto", "2026 (Stream 8 outcome)",
@@ -920,7 +921,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "gross_ann_sharpe -1.38 (wrong-way); cost -16.85 bps/day; ~100%/day rotation; MC-sign p=1.0",
         "A funding signal whose forward sign is STABLE (not mean-reverting) and that survives the ~100%/day "
         "two-leg cost — e.g. a slow, low-turnover funding state, NOT a daily XS reshuffle.",
-        tags=("cross-sectional funding", "funding cross-sectional", "funding-xs", "xs funding",
+        tags=("cross-sectional funding", "cross-sectional funding continuation", "funding cross-sectional", "funding-xs", "xs funding",
               "funding cross sectional", "cross sectional funding"),
     ),
     DeadEnd(
@@ -943,7 +944,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "7 coins (survivorship); gross +0.13 NS; cost -26 bps/day; under-powered",
         "A deep OI panel over a wider, point-in-time (non-survivorship) universe with enough names for a "
         "powered cross-sectional test.",
-        tags=("oi growth", "oi-growth", "open-interest growth", "open interest growth", "oi growth xs"),
+        tags=("oi growth", "oi-growth", "open-interest growth", "open-interest growth cross-sectional", "open interest growth", "oi growth xs"),
     ),
     DeadEnd(
         "S2.3 cross-venue funding dispersion", "crypto", "2026 (Stream 2 v-next)",
@@ -1039,9 +1040,27 @@ class DeadEndsLedger:
         return list(self._entries)
 
     def _match(self, proposal: str) -> DeadEnd | None:
+        """Hardened matching (2026-07-03, incident research_toplsr/JOURNAL_taker.md).
+
+        The original single-substring rule false-BLOCKED a disjoint-axis proposal that
+        merely contained one generic tag phrase ("short-horizon continuation"). An entry
+        now matches only when the evidence is strong: the entry NAME appears verbatim,
+        OR >=2 distinct tags hit, OR one ultra-specific tag (>=4 words) hits. Tags match
+        on word boundaries so short tags ("ofi", "cot") can never fire inside words
+        ("profit", "apricot"). Loosening a real block requires editing the entry — the
+        verdict semantics (BLOCKED / ALLOWED-NEW-AXIS / NOT-A-DEAD-END) are unchanged.
+        """
+        def _found(needle: str, haystack: str) -> bool:
+            return bool(re.search(r"(?<!\w)" + re.escape(needle) + r"(?!\w)", haystack))
+
         text = proposal.lower()
         for entry in self._entries:
-            if any(tag and tag in text for tag in entry.tags):
+            name = entry.name.lower().strip()
+            if name and _found(name, text):
+                return entry
+            hits = [t for t in {tag.lower().strip() for tag in entry.tags if tag}
+                    if _found(t, text)]
+            if len(hits) >= 2 or any(len(t.split()) >= 4 for t in hits):
                 return entry
         return None
 
