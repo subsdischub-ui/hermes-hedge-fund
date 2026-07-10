@@ -72,6 +72,22 @@ class NullTRMVerifier:
         return VerifierOutput(refined_action=draft_action.copy(), confidence=1.0, used_trm=False)
 
 
+def load_trm_checkpoint(checkpoint: Path, device: str) -> dict:
+    """Unpickle a TRM checkpoint with ``weights_only=True`` — never arbitrary code.
+
+    ``weights_only=False`` would let a tampered/untrusted checkpoint file execute
+    arbitrary code at load time (pickle). The checkpoint Hermès expects is a plain
+    ``state_dict`` (or ``{"model": state_dict}``) of tensors + basic containers,
+    which ``weights_only=True`` loads fine on torch>=2.x. If a FUTURE training
+    pipeline saves exotic objects in the checkpoint, this loader fails LOUDLY at
+    startup (falling back to NullTRMVerifier via get_trm) instead of silently
+    unpickling attacker-controlled code — the fix then is to save a plain
+    state_dict, not to weaken this loader. No checkpoint exists today (TRM is
+    frozen, ratified 2026-07-11), so this cannot regress production.
+    """
+    return torch.load(checkpoint, map_location=device, weights_only=True)
+
+
 class TRMVerifier:
     """Real TRM verifier — loads checkpoint, runs the recursive forward."""
 
@@ -101,7 +117,7 @@ class TRMVerifier:
         model_cfg.setdefault("mlp_t", False)
 
         self.model = self._Model(model_cfg).to(self.device).eval()
-        sd = torch.load(checkpoint, map_location=self.device, weights_only=False)
+        sd = load_trm_checkpoint(checkpoint, self.device)
         state = sd.get("model", sd)
         missing, unexpected = self.model.load_state_dict(state, strict=False)
         if missing or unexpected:

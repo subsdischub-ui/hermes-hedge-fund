@@ -1,5 +1,6 @@
 """Dashboard endpoints serve the HTML shell and a read-only telemetry feed."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from hermes.api import app
@@ -206,3 +207,26 @@ def test_dashboard_data_restructuration_block_has_required_facts():
         assert r["fx"]["reopen_check"] == "2027-07-02"
         assert r["global_cutoff"] == "2028-01-02"
         assert "RESTRUCTURATION" in r["dossier"]
+
+
+def test_trm_checkpoint_loader_is_weights_only(tmp_path):
+    """Sécurité (chip 2026-07-11) : le checkpoint TRM se charge en weights_only=True —
+    un state_dict ordinaire passe, un objet pickle arbitraire (vecteur d'exécution de
+    code) est REJETÉ au lieu d'être désérialisé silencieusement."""
+    torch = pytest.importorskip("torch")
+    from hermes.trm.verifier import load_trm_checkpoint
+
+    ok = tmp_path / "ok.pt"
+    torch.save({"model": {"w": torch.zeros(2, 2)}}, ok)
+    sd = load_trm_checkpoint(ok, "cpu")
+    assert "model" in sd and sd["model"]["w"].shape == (2, 2)
+
+    # Un checkpoint falsifié porterait une référence de callable arbitraire
+    # (pickle-par-référence) : weights_only=True doit la REJETER à la charge.
+    import os
+    import pickle
+
+    bad = tmp_path / "bad.pt"
+    torch.save({"model": {"w": torch.zeros(1)}, "exotic": os.system}, bad)
+    with pytest.raises(pickle.UnpicklingError):
+        load_trm_checkpoint(bad, "cpu")
