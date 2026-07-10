@@ -153,7 +153,14 @@ strategy:
   # It self-selects at funding z>=2 so it is exempt from conviction_min automatically.
   # #3 funding_carry_harvest is delta-neutral (the paper book routes it STRUCTURALLY
   # to a short-perp+long-spot pair, never a naked order) so it is safe in the slate.
-  allowed_skills: [mean_reversion_regime, funding_squeeze_continuation, funding_carry_harvest]
+  # SUSPENSION S3 2026-07-11 (validée opérateur) : funding_carry_harvest retiré du
+  # slate exécutable — contribution livre LOO-Δ = −0.081 (négative, comme S1 avant
+  # retrait), edge par trade au coût taker honnête +16..23bps avec OOS-40 ≈ 0 (ré-audit :
+  # sain uniquement en exécution MAKER, jamais mesurée), 0 trade en 19 jours de live.
+  # La jauge dashboard et le shadow restent. Condition de réveil : fill-rate maker RÉEL
+  # mesuré au stage_1. Un sleeve qui n'est rentable qu'à un coût d'exécution non prouvé
+  # ne doit pas nourrir le gate d'évidence.
+  allowed_skills: [mean_reversion_regime, funding_squeeze_continuation]
   conviction_min: 1.0          # floor for conviction-gated skills; the current slate self-selects
                                # at extremes, so no skill is conviction-gated today (see selective.py)
   no_pyramid: true             # one position per symbol at a time (consolidation)
@@ -225,6 +232,12 @@ trm:
   L_layers: 2
   halt_max_steps: 6
   confidence_floor: 0.55
+  # GEL TRM 2026-07-11 (validé opérateur) : aucun checkpoint entraîné n'existe
+  # (NullTRMVerifier passthrough — comportement inchangé, affiché honnêtement au
+  # dashboard trm_status). NE PAS entraîner maintenant : 8 trades réels clos = zéro
+  # donnée d'entraînement, et entraîner sur les événements du backtest serait
+  # circulaire. Condition de réveil : ré-évaluer l'entraînement à >=100 trades
+  # réels clos du slate.
 
 memory:
   vector_collection: hermes_lessons

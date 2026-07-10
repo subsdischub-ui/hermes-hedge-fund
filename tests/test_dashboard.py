@@ -130,7 +130,7 @@ def test_dashboard_data_trm_status_reflects_no_checkpoint():
 def test_trm_status_summary_checkpoint_absent(monkeypatch, tmp_path):
     """Direct unit test of the helper (bypassing the TRM_ENABLED=false test-suite
     default): enabled + torch present + no checkpoint file on disk -> the exact
-    'NullVerifier (checkpoint absent — downgrade-only inopérant)' wording the
+    'NullVerifier (checkpoint absent — downgrade-only inopérant ; GEL ratifié 2026-07-11, ré-évaluer l'entraînement à >=100 trades réels clos)' wording the
     mission specifies, not just 'something falsy'."""
     from hermes.settings import get_settings
     from hermes.trm.verifier import trm_status_summary
@@ -140,7 +140,7 @@ def test_trm_status_summary_checkpoint_absent(monkeypatch, tmp_path):
     get_settings.cache_clear()
     try:
         status = trm_status_summary()
-        assert status == "NullVerifier (checkpoint absent — downgrade-only inopérant)"
+        assert status == "NullVerifier (checkpoint absent — downgrade-only inopérant ; GEL ratifié 2026-07-11, ré-évaluer l'entraînement à >=100 trades réels clos)"
     finally:
         get_settings.cache_clear()
 

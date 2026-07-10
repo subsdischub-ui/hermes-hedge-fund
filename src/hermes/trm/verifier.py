@@ -193,5 +193,5 @@ def trm_status_summary() -> str:
     if not _TORCH_OK:
         return "NullVerifier (torch absent — downgrade-only inopérant)"
     if not s.trm_checkpoint.exists():
-        return "NullVerifier (checkpoint absent — downgrade-only inopérant)"
+        return "NullVerifier (checkpoint absent — downgrade-only inopérant ; GEL ratifié 2026-07-11, ré-évaluer l'entraînement à >=100 trades réels clos)"
     return "actif (checkpoint chargé)"

@@ -60,8 +60,10 @@ quand leur jauge est armée, sinon elles attendent par discipline) :
 retrait de S1 ci-dessous).
 - #2 Funding squeeze (funding z>=2, long ~96h) : continuation sur funding extrême, orthogonale à #1 \
 — le SEUL edge validé du livre (joint-null p=0.0005 après le fix de mesure du 2026-07-02).
-- #3 Funding carry delta-neutral (short perp + long spot, funding>=2bps, ~8j) : récolte le carry \
-en marché calme, market-neutral ; ne trade JAMAIS à nu (prouvé perdant sur 9 ans).
+SUSPENDU DU SLATE (2026-07-11, validé opérateur) : #3 Funding carry delta-neutral — contribution \
+livre LOO-Δ −0.081 (négative) et edge par trade trop mince au coût taker honnête (+16..23bps, \
+OOS-40 ≈ 0 ; sain uniquement en exécution maker, jamais mesurée). Sa jauge reste affichée \
+(le signal est calculé mais JAMAIS exécuté) ; réveil : fill-rate maker réel mesuré au stage_1.
 RETIRÉ DU SLATE (2026-07-02) : l'ex-Strategy #1 momentum (ts_mom_vol_scaled, |score|>=1.0) — \
 mesuré comme un drag bull-beta (book LOO-Δ Sharpe -0.146, joint-null p=0.507 : indiscernable d'une \
 entrée aléatoire). Le contexte ci-dessous détaille les chiffres et le nouveau gate \
@@ -400,6 +402,13 @@ def _restructuration_status(s, edge_paper_trades_observed: int) -> dict[str, Any
             # S1 p 0.69→0.507 (toujours indiscernable du hasard), LOO-Δ inchangé.
             {"skill_id": "ts_mom_vol_scaled", "loo_delta_sharpe": -0.146, "joint_null_p": 0.507},
         ],
+        "suspended": [
+            # 2026-07-11, validé opérateur : LOO-Δ −0.081 (négatif), edge taker mince
+            # (+16..23bps/trade, OOS-40 ~0 — sain uniquement en maker, jamais mesuré),
+            # 0 trade live. Jauge + shadow conservés. Réveil : fill-rate maker au stage_1.
+            {"skill_id": "funding_carry_harvest", "loo_delta_sharpe": -0.081,
+             "reveil": "fill-rate maker réel mesuré au stage_1"},
+        ],
         "gate": {
             "edge_paper_trades_target": gate_target,
             "edge_paper_trades_observed": edge_paper_trades_observed,
@@ -553,7 +562,10 @@ def _strategies_ab(closed_rows, open_positions=None) -> dict:
             "research": {
                 "oos_validated_bricks": 1,
                 "candidates_tested": 40,
-                "note": "Delta-neutral funding carry (cash-and-carry), RESTATÉ par le ré-audit "
+                "note": "SUSPENDU du slate le 2026-07-11 (validé opérateur — LOO-Δ −0.081, "
+                        "0 trade live ; jauge conservée, signal jamais exécuté ; réveil : "
+                        "fill-rate maker réel au stage_1). "
+                        "Delta-neutral funding carry (cash-and-carry), RESTATÉ par le ré-audit "
                         "2026-06-25 : au coût taker honnête (30bps deux jambes) l'edge est mince "
                         "(+16..+23bps/trade) avec OOS-40 ~0 — le '+2.4..+4.5' historique ne "
                         "reproduit pas au coût honnête ; sain seulement en exécution maker "
@@ -697,7 +709,14 @@ def _restructuration_chat_block(s, edge_count: int) -> str:
         f"{retired['loo_delta_sharpe']} (le livre double son Sharpe sans lui), joint-null p="
         f"{retired['joint_null_p']} (panier indiscernable d'une entrée aléatoire). "
         f"mean_reversion_regime reste (skill distinct, non concerné).\n"
-        f"  - Gate stage_0: edge_paper_trades {gate['edge_paper_trades_observed']}/"
+        + (
+            f"  - Suspendu (2026-07-11, validé opérateur) : {susp[0]['skill_id']} — LOO-Δ "
+            f"{susp[0]['loo_delta_sharpe']} (contribution négative), edge taker trop mince "
+            f"(sain uniquement en maker, jamais mesuré) ; jauge et shadow conservés ; "
+            f"réveil : {susp[0]['reveil']}.\n"
+            if (susp := r.get("suspended")) else ""
+        )
+        + f"  - Gate stage_0: edge_paper_trades {gate['edge_paper_trades_observed']}/"
         f"{gate['edge_paper_trades_target']} (compte SEULEMENT les trades du slate actuel — "
         f"un livre à événements rares prend des années par construction ; peu de trades = "
         f"protection du capital, pas une panne).\n"

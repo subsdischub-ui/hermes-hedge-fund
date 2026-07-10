@@ -38,7 +38,9 @@ __all__ = [
 # breakout_vol_expansion, pairs_eth_btc, intraday_tod_btc.
 TREND_SKILLS: list[str] = []
 RANGE_SKILLS = ["mean_reversion_regime"]
-ALWAYS_ON = ["funding_squeeze_continuation", "funding_carry_harvest"]
+# funding_carry_harvest SUSPENDU du slate le 2026-07-11 (LOO-Δ −0.081, edge taker
+# mince, maker jamais mesuré — réveil : fill-rate maker réel au stage_1).
+ALWAYS_ON = ["funding_squeeze_continuation"]
 
 
 def _equal_weights(keys: Sequence[str]) -> dict[str, float]:

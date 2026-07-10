@@ -56,10 +56,14 @@ def pulse_entry(
         elif s.skill_id == "funding_carry_harvest":
             bps = round(float(s.features.get("funding_bps", 0.0)), 2)
             arm = float(s.features.get("arm_bps", 2.0))
-            # Now executable as a delta-neutral pair (short perp + long spot): arms
-            # like the others when funding clears the threshold.
+            # SUSPENDU du slate le 2026-07-11 (LOO-Δ −0.081 ; edge taker mince, maker
+            # jamais mesuré). La jauge continue d'afficher ce que le signal VOIT
+            # (transparence), mais armed est forcé False — le selective gate rejette
+            # de toute façon tout skill hors allowed_skills. Réveil : mesure maker
+            # réelle au stage_1.
             gauges.append({"sleeve": "Carry #3 (delta-neutral)", "metric": "funding bps",
-                           "val": bps, "thr": arm, "armed": bps >= arm})
+                           "val": bps, "thr": arm, "armed": False, "suspended": True,
+                           "status": "suspendu (hors slate 2026-07-11 — mesure maker requise)"})
     would_act, would_skill, reason = "HOLD", "", "no actionable signal"
     for s in signals:
         if s.side == "HOLD":
