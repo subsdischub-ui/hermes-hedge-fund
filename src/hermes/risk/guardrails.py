@@ -14,17 +14,32 @@ Hard rules (cannot be overridden by LLM):
   - Refuse SELL on a spot stage when no existing long exists to close against
     (spot venues cannot short).
   - Refuse if stage is paper-only but configured exchange is not the paper one.
+  - Refuse if a macro blackout window is active (FOMC/CPI/NFP ± config hours) —
+    ENFORCE stages only (config macro_blackout.enforce_stages); stage_0_paper runs
+    it in SHADOW (compute + log + expose the verdict, never blocks — see
+    hermes.risk.macro_blackout and docs/SYSTEME_AUTONOME.md partie III).
+  - Refuse if rolling realized PnL over a multi-day window ≤ -kill_pct of equity
+    (catches slow multi-day erosion the daily kill switch is blind to) —
+    ENFORCE stages only (config rolling_loss_kill.enforce_stages); stage_0_paper
+    runs it in SHADOW, same fidelity rationale as the macro blackout above.
+
+Fidelity decision (operator, 2026-07-10): the live strategies were VALIDATED on
+backtests that include news periods, so the two gates above default to SHADOW at
+stage_0_paper — computing and exposing their verdict without changing the decision —
+and only BLOCK once real money is at stake (stage_1+). This mirrors the maker-fee
+fidelity lesson: never silently diverge live behaviour from what was validated.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import UTC, datetime
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from hermes.execution.base import Exchange, Order, Position
 from hermes.logging_setup import get_logger
+from hermes.risk.macro_blackout import blackout_status, get_macro_calendar
 from hermes.risk.sizing import (
     PositionSizer,
     SizingInputs,
@@ -68,10 +83,16 @@ class RiskDecision:
     reason: str
     order: Order | None = None
     sizing: SizingOutput | None = None
+    # Shadow verdicts for gates not (yet) enforced at the current stage — e.g.
+    # {"macro_blackout": {...}, "rolling_drawdown_kill": {...}}. Populated whenever
+    # the corresponding gate is evaluated, REGARDLESS of whether it ends up blocking
+    # this decision, so the operator/dashboard can see what the gate WOULD have done
+    # (visibility rule: a shipped safety mechanism must be racontable, not silent).
+    shadow: dict[str, Any] = field(default_factory=dict)
 
 
-async def _realized_pnl_today_usd(now: datetime | None = None) -> float:
-    """Sum of pnl_usd over trades closed since UTC midnight today.
+async def _realized_pnl_since(cutoff: datetime) -> float:
+    """Sum of pnl_usd over trades closed at or after ``cutoff`` (UTC, inclusive).
 
     Imported lazily to avoid a circular import between risk and memory layers.
     """
@@ -79,20 +100,35 @@ async def _realized_pnl_today_usd(now: datetime | None = None) -> float:
 
     from hermes.memory.store import JournalRow, get_db
 
-    midnight = (now or datetime.now(UTC)).replace(
-        hour=0, minute=0, second=0, microsecond=0
-    )
     db = get_db()
     async with db.session() as s:
         rows = (
             await s.execute(
                 select(JournalRow).where(
                     JournalRow.closed_at.is_not(None),
-                    JournalRow.closed_at >= midnight,
+                    JournalRow.closed_at >= cutoff,
                 )
             )
         ).scalars().all()
     return float(sum((r.pnl_usd or 0.0) for r in rows))
+
+
+async def _realized_pnl_today_usd(now: datetime | None = None) -> float:
+    """Sum of pnl_usd over trades closed since UTC midnight today (the daily kill
+    switch's window — resets every midnight)."""
+    midnight = (now or datetime.now(UTC)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+    return await _realized_pnl_since(midnight)
+
+
+async def _realized_pnl_window_usd(days: int, now: datetime | None = None) -> float:
+    """Sum of pnl_usd over trades closed in the trailing ``days``-day rolling window
+    (does NOT reset at midnight — this is what catches a slow multi-day erosion the
+    daily kill switch cannot see: e.g. -4.9%/day for 10 days never trips a single
+    day's kill_pct but bleeds ~-40% of equity before the cold-floor)."""
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=days)
+    return await _realized_pnl_since(cutoff)
 
 
 class RiskEngine:
@@ -115,10 +151,17 @@ class RiskEngine:
         # new positions so the aggregate book risk does not stack on a single factor.
         self.correlation_rho = float(sizing_cfg.get("correlation_rho", 0.85))
         self.min_notional = venue_min_notional(self.stage_cfg.get("venue", "paper"))
+        # Own copy of the stage string (NOT self.settings.stage) so tests can
+        # monkeypatch enforce-vs-shadow behaviour on a single engine instance
+        # without mutating the process-wide cached Settings singleton (same
+        # monkeypatch idiom already used on stage_cfg in tests/test_risk_engine.py).
+        self.stage = s.stage
+        self.macro_blackout_cfg = s.yaml("macro_blackout", default={}) or {}
+        self.rolling_loss_kill_cfg = s.yaml("rolling_loss_kill", default={}) or {}
 
-    def _hard_reject(self, reason: str) -> RiskDecision:
+    def _hard_reject(self, reason: str, shadow: dict[str, Any] | None = None) -> RiskDecision:
         log.info("risk_reject", reason=reason)
-        return RiskDecision(decision="REJECTED", reason=reason)
+        return RiskDecision(decision="REJECTED", reason=reason, shadow=shadow or {})
 
     async def evaluate(
         self,
@@ -128,12 +171,44 @@ class RiskEngine:
         price: float,
         journal_stats: dict,
         realized_pnl_today_usd: float | None = None,
+        realized_pnl_window_usd: float | None = None,
         vol_scale: float = 1.0,
     ) -> RiskDecision:
         if proposal.side == "HOLD":
             return self._hard_reject("HOLD action — nothing to execute")
         if proposal.symbol not in self.universe:
             return self._hard_reject(f"symbol {proposal.symbol} not in universe")
+
+        # Shadow verdicts accumulate here as gates are evaluated below, and are
+        # attached to WHATEVER RiskDecision this call ends up returning (approved or
+        # rejected for an unrelated reason) — see RiskDecision.shadow docstring.
+        shadow: dict[str, Any] = {}
+
+        # Macro blackout — FOMC/CPI/NFP ± config hours (docs/SYSTEME_AUTONOME.md
+        # partie III: the agent had NO news blackout, the exact failure mode that
+        # cost the operator $12k trading through a live announcement). SHADOW at
+        # stage_0_paper (fidelity decision: the backtests that validated these
+        # strategies include news periods — see module docstring), ENFORCE at
+        # real stages per macro_blackout.enforce_stages.
+        if self.macro_blackout_cfg.get("enabled", True):
+            verdict = blackout_status(
+                self.now(),
+                get_macro_calendar(),
+                pre_h=float(self.macro_blackout_cfg.get("pre_hours", 2.0)),
+                post_h=float(self.macro_blackout_cfg.get("post_hours", 2.0)),
+            )
+            shadow["macro_blackout"] = verdict
+            if verdict["blocked"]:
+                enforce_stages = set(self.macro_blackout_cfg.get("enforce_stages", []))
+                if self.stage in enforce_stages:
+                    return self._hard_reject(f"macro blackout: {verdict['event']}", shadow=shadow)
+                log.warning(
+                    "macro_blackout_shadow",
+                    macro_event=verdict["event"],
+                    event_type=verdict["event_type"],
+                    stage=self.stage,
+                )
+
         # Confidence floor — two legitimate roles only: (a) a TRM halt forces
         # confidence to 0 and MUST always reject, any skill; (b) LLM-sourced
         # proposals (empty skill_id) below the floor are rejected. SELF-SELECTING
@@ -145,18 +220,19 @@ class RiskEngine:
         # fidelity defect class as the maker-fee bug. Conviction-gated skills
         # (risk/selective._CONVICTION_GATED) keep the floor.
         if proposal.confidence <= 0.0:
-            return self._hard_reject("confidence 0 — TRM halt or empty proposal")
+            return self._hard_reject("confidence 0 — TRM halt or empty proposal", shadow=shadow)
         from hermes.risk.selective import _CONVICTION_GATED
 
         self_selecting = bool(proposal.skill_id) and proposal.skill_id not in _CONVICTION_GATED
         if not self_selecting and proposal.confidence < self.confidence_floor:
             return self._hard_reject(
-                f"confidence {proposal.confidence:.2f} < floor {self.confidence_floor:.2f}"
+                f"confidence {proposal.confidence:.2f} < floor {self.confidence_floor:.2f}",
+                shadow=shadow,
             )
 
         equity = await exchange.equity_usd()
         if equity < 5.0:
-            return self._hard_reject(f"equity ${equity:.2f} below cold-floor")
+            return self._hard_reject(f"equity ${equity:.2f} below cold-floor", shadow=shadow)
 
         # Daily kill switch — compute from the journal if caller didn't supply.
         if realized_pnl_today_usd is None:
@@ -165,13 +241,50 @@ class RiskEngine:
         if realized_pnl_today_usd / max(equity, 1e-9) <= -kill_pct:
             return self._hard_reject(
                 f"daily loss kill triggered (pnl={realized_pnl_today_usd:.2f}, "
-                f"equity={equity:.2f}, kill_pct={kill_pct * 100:.2f}%)"
+                f"equity={equity:.2f}, kill_pct={kill_pct * 100:.2f}%)",
+                shadow=shadow,
             )
+
+        # Rolling drawdown circuit-breaker — the daily kill switch above resets every
+        # UTC midnight, so it is blind to a SLOW multi-day erosion (e.g. -4.9%/day for
+        # 10 days never crosses one day's kill_pct but bleeds ~-40% of equity before
+        # the cold-floor). SHADOW at stage_0_paper, ENFORCE at real stages, same
+        # fidelity rationale as the macro blackout above.
+        if self.rolling_loss_kill_cfg.get("enabled", True):
+            window_days = int(self.rolling_loss_kill_cfg.get("window_days", 30))
+            rolling_kill_pct = float(self.rolling_loss_kill_cfg.get("kill_pct", 10.0)) / 100
+            if realized_pnl_window_usd is None:
+                realized_pnl_window_usd = await _realized_pnl_window_usd(window_days)
+            rolling_ratio = realized_pnl_window_usd / max(equity, 1e-9)
+            rolling_blocked = rolling_ratio <= -rolling_kill_pct
+            shadow["rolling_drawdown_kill"] = {
+                "blocked": rolling_blocked,
+                "window_days": window_days,
+                "pnl_usd": realized_pnl_window_usd,
+                "equity_usd": equity,
+                "kill_pct": rolling_kill_pct * 100,
+            }
+            if rolling_blocked:
+                enforce_stages = set(self.rolling_loss_kill_cfg.get("enforce_stages", []))
+                if self.stage in enforce_stages:
+                    return self._hard_reject(
+                        f"rolling drawdown kill triggered (pnl_{window_days}d="
+                        f"{realized_pnl_window_usd:.2f}, equity={equity:.2f}, "
+                        f"kill_pct={rolling_kill_pct * 100:.2f}%)",
+                        shadow=shadow,
+                    )
+                log.warning(
+                    "rolling_drawdown_kill_shadow",
+                    pnl_window_usd=realized_pnl_window_usd,
+                    window_days=window_days,
+                    equity_usd=equity,
+                    stage=self.stage,
+                )
 
         positions = await exchange.open_positions()
         max_open = int(self.stage_cfg.get("max_open_positions", 3))
         if len(positions) >= max_open:
-            return self._hard_reject(f"max open positions {max_open} reached")
+            return self._hard_reject(f"max open positions {max_open} reached", shadow=shadow)
         # No-pyramid per (symbol, skill_id) — NOT per symbol alone. The book is keyed
         # symbol::skill_id by design (paper.py, stop_watcher.py) and selective.py tests
         # pin that momentum holding BTC must not starve funding on BTC. The old
@@ -182,11 +295,13 @@ class RiskEngine:
             p.symbol == proposal.symbol and (p.skill_id or "") == (proposal.skill_id or "")
             for p in positions
         ):
-            return self._hard_reject(f"already have open position on {proposal.symbol}")
+            return self._hard_reject(f"already have open position on {proposal.symbol}", shadow=shadow)
 
         # paper mode: enforce paper venue at stage 0
         if self.stage_cfg.get("venue", "paper") == "paper" and exchange.name != "paper":
-            return self._hard_reject("stage_0_paper but exchange is not paper — refusing live trade")
+            return self._hard_reject(
+                "stage_0_paper but exchange is not paper — refusing live trade", shadow=shadow
+            )
 
         # Spot-stage gate: SELL is never an opening order on a spot-only stage —
         # rejected outright here (closes go through close_position, not evaluate()).
@@ -195,11 +310,13 @@ class RiskEngine:
             and self.stage_cfg.get("instruments", "spot") == "spot"
             and proposal.side == "SELL"
         ):
-            return self._hard_reject("SELL not permitted on a spot-only stage (no shorting)")
+            return self._hard_reject(
+                "SELL not permitted on a spot-only stage (no shorting)", shadow=shadow
+            )
 
         stage_cap_pct = float(self.stage_cfg.get("per_trade_risk_cap_pct", 0.5))
         if stage_cap_pct <= 0.0:
-            return self._hard_reject("stage per_trade_risk_cap_pct is 0 — sizing disabled")
+            return self._hard_reject("stage per_trade_risk_cap_pct is 0 — sizing disabled", shadow=shadow)
 
         sizing = self.sizer.size(
             SizingInputs(
@@ -222,7 +339,8 @@ class RiskEngine:
 
         if sizing.notional_usd < self.min_notional:
             return self._hard_reject(
-                f"notional ${sizing.notional_usd:.2f} < ${self.min_notional:.0f} venue minimum"
+                f"notional ${sizing.notional_usd:.2f} < ${self.min_notional:.0f} venue minimum",
+                shadow=shadow,
             )
         # Notional cap as a function of stage cap × leverage allowance. We cap at
         # 5× equity for spot (capped further by exchange minimums) and tighter for
@@ -230,7 +348,8 @@ class RiskEngine:
         notional_cap = min(5.0 * equity, 0.5 * equity * 10)  # i.e. 5x equity
         if sizing.notional_usd > notional_cap:
             return self._hard_reject(
-                f"notional ${sizing.notional_usd:.2f} > cap ${notional_cap:.2f} (equity ${equity:.2f})"
+                f"notional ${sizing.notional_usd:.2f} > cap ${notional_cap:.2f} (equity ${equity:.2f})",
+                shadow=shadow,
             )
 
         stop = price * (1 - proposal.stop_pct) if proposal.side == "BUY" else price * (1 + proposal.stop_pct)
@@ -251,7 +370,9 @@ class RiskEngine:
             notional=sizing.notional_usd,
             risk_pct=sizing.risk_pct,
         )
-        return RiskDecision(decision="APPROVED", reason=sizing.rationale, order=order, sizing=sizing)
+        return RiskDecision(
+            decision="APPROVED", reason=sizing.rationale, order=order, sizing=sizing, shadow=shadow
+        )
 
     async def check_stops(self, exchange: Exchange) -> list[tuple[Position, str]]:
         """Server-side stop/TP fallback for paper mode (real exchanges enforce these)."""

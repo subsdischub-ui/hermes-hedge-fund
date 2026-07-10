@@ -214,6 +214,8 @@ async def dashboard_data() -> dict[str, Any]:
         "forward": _forward_status(s),
         "governance": _governance_status(),
         "restructuration": _restructuration_status(s, edge_count),
+        "trm_status": _trm_status_safe(),
+        "protections": await _protections_status(s, equity),
         "server_time": datetime.now(UTC).isoformat(),
     }
 
@@ -280,6 +282,75 @@ def _forward_status(s) -> dict[str, dict]:
                     str(sym): int(n) for sym, n in df["symbol"].value_counts().items()
                 }
         out[flux] = entry
+    return out
+
+
+def _trm_status_safe() -> str:
+    """Fail-soft wrapper around trm.verifier.trm_status_summary — never let a
+    dashboard render 500 on a TRM config surprise."""
+    try:
+        from hermes.trm.verifier import trm_status_summary
+
+        return trm_status_summary()
+    except Exception as e:
+        return f"error: {e}"
+
+
+async def _protections_status(s, equity_usd: float) -> dict[str, Any]:
+    """Operator-visibility block (mémoire hermes-visibility-rule: a shipped safety
+    mechanism must be racontable, not silent) for the two gates added 2026-07-10
+    (docs/SYSTEME_AUTONOME.md partie III): macro blackout + rolling drawdown kill.
+    Both run SHADOW at stage_0_paper (see config/default.yaml) — this block is what
+    lets the operator SEE what the shadow verdict currently is, independent of
+    whatever the last live tick happened to observe. Computed fresh from the same
+    pure functions/config the RiskEngine gates use, fail-soft per sub-block so a
+    corrupt calendar or a DB hiccup never takes down the whole dashboard."""
+    from hermes.risk.guardrails import _realized_pnl_window_usd
+
+    out: dict[str, Any] = {}
+
+    macro_cfg = s.yaml("macro_blackout", default={}) or {}
+    try:
+        from hermes.risk.macro_blackout import (
+            blackout_status,
+            get_macro_calendar,
+            horizon_warning,
+        )
+
+        cal = get_macro_calendar()
+        now = datetime.now(UTC)
+        verdict = blackout_status(
+            now, cal,
+            pre_h=float(macro_cfg.get("pre_hours", 2.0)),
+            post_h=float(macro_cfg.get("post_hours", 2.0)),
+        )
+        out["macro_blackout"] = {
+            "enabled": bool(macro_cfg.get("enabled", True)),
+            "mode": "enforce" if s.stage in set(macro_cfg.get("enforce_stages", [])) else "shadow",
+            "verdict": verdict,
+            "horizon_warning": horizon_warning(now, cal),
+        }
+    except Exception as e:
+        out["macro_blackout"] = {"status": "error", "error": str(e)}
+
+    rolling_cfg = s.yaml("rolling_loss_kill", default={}) or {}
+    try:
+        window_days = int(rolling_cfg.get("window_days", 30))
+        kill_pct = float(rolling_cfg.get("kill_pct", 10.0))
+        pnl_window = await _realized_pnl_window_usd(window_days)
+        blocked = pnl_window / max(equity_usd, 1e-9) <= -(kill_pct / 100)
+        out["rolling_loss_kill"] = {
+            "enabled": bool(rolling_cfg.get("enabled", True)),
+            "mode": "enforce" if s.stage in set(rolling_cfg.get("enforce_stages", [])) else "shadow",
+            "window_days": window_days,
+            "kill_pct": kill_pct,
+            "pnl_usd": pnl_window,
+            "equity_usd": equity_usd,
+            "blocked": blocked,
+        }
+    except Exception as e:
+        out["rolling_loss_kill"] = {"status": "error", "error": str(e)}
+
     return out
 
 

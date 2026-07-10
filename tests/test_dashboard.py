@@ -115,6 +115,78 @@ def test_dashboard_data_governance_block_fail_soft():
         assert "dead_ends_verdicts" in gov
 
 
+def test_dashboard_data_trm_status_reflects_no_checkpoint():
+    """conftest.py sets TRM_ENABLED=false for the whole test suite (hermetic, no
+    torch model load) — trm_status must say so plainly, never claim 'actif'."""
+    with TestClient(app) as client:
+        data = client.get("/dashboard/data")
+        assert data.status_code == 200
+        j = data.json()
+        assert "trm_status" in j
+        assert isinstance(j["trm_status"], str)
+        assert "désactivé" in j["trm_status"] or "disab" in j["trm_status"].lower()
+
+
+def test_trm_status_summary_checkpoint_absent(monkeypatch, tmp_path):
+    """Direct unit test of the helper (bypassing the TRM_ENABLED=false test-suite
+    default): enabled + torch present + no checkpoint file on disk -> the exact
+    'NullVerifier (checkpoint absent — downgrade-only inopérant)' wording the
+    mission specifies, not just 'something falsy'."""
+    from hermes.settings import get_settings
+    from hermes.trm.verifier import trm_status_summary
+
+    monkeypatch.setenv("TRM_ENABLED", "true")
+    monkeypatch.setenv("TRM_CHECKPOINT", str(tmp_path / "does_not_exist.pt"))
+    get_settings.cache_clear()
+    try:
+        status = trm_status_summary()
+        assert status == "NullVerifier (checkpoint absent — downgrade-only inopérant)"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_trm_status_summary_checkpoint_present_reports_active(monkeypatch, tmp_path):
+    """Same helper, checkpoint file DOES exist on disk -> 'actif (checkpoint
+    chargé)'. This is existence-based (see the helper's docstring caveat), not a
+    guarantee TRMVerifier.__init__ would succeed — but it is the literal contract
+    the mission specifies for the dashboard string."""
+    from hermes.settings import get_settings
+    from hermes.trm.verifier import trm_status_summary
+
+    ckpt = tmp_path / "latest.pt"
+    ckpt.write_bytes(b"not a real checkpoint, existence is all that matters here")
+    monkeypatch.setenv("TRM_ENABLED", "true")
+    monkeypatch.setenv("TRM_CHECKPOINT", str(ckpt))
+    get_settings.cache_clear()
+    try:
+        assert trm_status_summary() == "actif (checkpoint chargé)"
+    finally:
+        get_settings.cache_clear()
+
+
+def test_dashboard_data_protections_block_shape():
+    """LIVRABLE 3: the two new gates' shadow verdicts must be visible on the
+    dashboard, independent of any specific live tick — computed fresh."""
+    with TestClient(app) as client:
+        data = client.get("/dashboard/data")
+        assert data.status_code == 200
+        prot = data.json()["protections"]
+        assert "macro_blackout" in prot
+        assert "rolling_loss_kill" in prot
+
+        mb = prot["macro_blackout"]
+        assert mb["enabled"] is True
+        # stage_0_paper (the test default) is shadow, never enforce.
+        assert mb["mode"] == "shadow"
+        assert "blocked" in mb["verdict"]
+
+        rk = prot["rolling_loss_kill"]
+        assert rk["enabled"] is True
+        assert rk["mode"] == "shadow"
+        assert rk["window_days"] == 30
+        assert "blocked" in rk
+
+
 def test_dashboard_data_restructuration_block_has_required_facts():
     with TestClient(app) as client:
         data = client.get("/dashboard/data")

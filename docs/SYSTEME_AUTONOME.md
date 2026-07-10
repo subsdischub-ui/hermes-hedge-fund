@@ -575,3 +575,24 @@ Les 3 étages au-dessus du paper pointent TOUS Hyperliquid. factory.py supporte 
 - docs/DOSSIER_HERMES.md (section ~3.2.5) liste encore ts_mom_vol_scaled dans allowed_skills — ce document est antérieur au retrait de S1 (2026-07-02) ; le slate actuel confirmé dans config/default.yaml:110 est [mean_reversion_regime, funding_squeeze_continuation, funding_carry_harvest]. Ne pas se fier à DOSSIER_HERMES.md pour l'état du slate, seulement pour l'architecture des adapters.
 - L'absence de compte Hyperliquid/Bybit détenu par l'opérateur repose sur l'absence de preuve documentaire dans le repo/mémoires/mandat, pas sur une vérification externe des comptes réels de l'opérateur — mais Binance et JustMarkets SONT explicitement nommés dans le mandat de cette mission, ce qui rend l'asymétrie factuelle.
 - L'endpoint public dashboard/data a été interrogé en direct (stage_0_paper, equity $103.74) pour corroborer que le book n'a jamais quitté le paper — cohérent avec le gate edge_paper_trades à 2/40 mentionné dans le contexte opérateur.
+
+---
+
+## Addendum — 2026-07-10 soir : gaps (a) et (c) FERMÉS, mécanismes prouvés
+
+Les deux gaps de sûreté « avant stage_1 » sont fermés (TDD, 28 nouveaux tests) :
+- **Blackout macro** (`risk/macro_blackout.py` + `config/macro_calendar.yaml`) : 40 événements
+  réels 2026-2027 (16 FOMC, 12 CPI, 12 NFP) aux sources officielles Fed/BLS contre-vérifiées
+  (y compris deux anomalies BLS réelles : NFP mercredi 2026-02-11 et jeudi 2026-07-02),
+  fuseaux IANA + tzdata (DST-safe), fenêtre T−2h→T+2h configurable, warning si horizon < 60 j
+  (horizon actuel : 2026-12-04, BLS n'a pas encore publié 2027).
+- **Circuit-breaker de dérive** (`rolling_loss_kill`) : PnL réalisé glissant 30 j ≤ −10 %
+  de l'equity → kill, preuve par mutation RED/GREEN.
+- **Décision de fidélité** : les stratégies ont été validées AVEC les périodes de news —
+  les deux gates tournent donc en SHADOW au stage_0_paper (verdict calculé, loggé, exposé
+  au dashboard bloc `protections` — jamais bloquant) et n'APPLIQUENT qu'aux stages réels
+  1/2/3. On mesure leur impact sur l'évidence avant d'y soumettre du capital.
+- **Statut TRM exposé** (`trm_status` au dashboard) : NullVerifier vs actif — la décision
+  « entraîner ou retirer » revient à l'opérateur, désormais les yeux ouverts.
+
+**Gaps pré-stage_1 restants : (d) jambe spot carry réelle (S3), et la décision TRM.**

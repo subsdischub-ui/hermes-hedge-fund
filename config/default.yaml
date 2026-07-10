@@ -88,6 +88,39 @@ stages:
       calmar: 2.0
       equity_floor_usd: 250
 
+# Macro blackout (audit 2026-07-10, docs/SYSTEME_AUTONOME.md partie III): the agent
+# had NO blackout of any kind around FOMC/CPI/NFP — the exact failure mode that cost
+# the operator $12k trading through a live announcement on a manual account. Static
+# committed calendar: config/macro_calendar.yaml (real dates from federalreserve.gov
+# + bls.gov, sourced + dated in that file's header).
+# FIDELITY DECISION (operator, non-negotiable): the live strategies were VALIDATED on
+# backtests that INCLUDE news periods — blocking trades at stage_0_paper would
+# silently diverge live behaviour from what was validated, before we have any
+# evidence the blackout even helps (same class of bug as the maker-fee fidelity
+# issue). So stage_0_paper is deliberately ABSENT from enforce_stages below: the gate
+# still computes + logs (`macro_blackout_shadow`) + is exposed on
+# /dashboard/data.protections.macro_blackout, it just never blocks there. Real money
+# stages (1/2/3) hard-block.
+macro_blackout:
+  enabled: true
+  pre_hours: 2
+  post_hours: 2
+  enforce_stages: [stage_1_micro, stage_2_normal, stage_3_perps]
+
+# Rolling drawdown circuit-breaker (audit 2026-07-10): daily_loss_kill_pct above
+# resets every UTC midnight, so it is blind to a SLOW multi-day erosion — a loss of
+# 4.9%/day for 10 days never crosses any single day's kill_pct but bleeds ~40% of
+# equity before the $5 cold-floor even fires. window_days/kill_pct below protect
+# real capital against that erosion the daily kill cannot see.
+# Same fidelity decision as macro_blackout above: stage_0_paper SHADOW (log + expose
+# on /dashboard/data.protections.rolling_loss_kill, never blocks), real stages
+# enforce hard.
+rolling_loss_kill:
+  enabled: true
+  window_days: 30
+  kill_pct: 10.0
+  enforce_stages: [stage_1_micro, stage_2_normal, stage_3_perps]
+
 sizing:
   # position_size_usd = (equity * risk_pct) / (k * ATR(14) / price)
   atr_window: 14

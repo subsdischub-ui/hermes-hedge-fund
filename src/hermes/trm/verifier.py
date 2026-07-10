@@ -168,3 +168,30 @@ def get_trm() -> TRMVerifier | NullTRMVerifier:
     except RuntimeError as e:
         log.warning("trm_init_failed_fallback_null", error=str(e))
         return NullTRMVerifier()
+
+
+def trm_status_summary() -> str:
+    """Lightweight, dashboard-facing TRM status string.
+
+    Mirrors get_trm()'s decision path (trm_enabled -> torch available -> checkpoint
+    exists on disk) WITHOUT instantiating the model or calling torch.load() a second
+    time — a Path.exists() stat() call is cheap, loading checkpoint weights is not.
+    Audit finding (docs/SYSTEME_AUTONOME.md partie III, 2026-07-10): TRM is very
+    plausibly a NullVerifier in prod (no checkpoint at /data/trm/latest.pt has ever
+    been observed) — the downgrade-only contract is correct but inert without a
+    trained model. This is surfaced so the operator sees that state, not code that
+    silently behaves as if TRM were active.
+
+    NOTE: existence of the checkpoint file does not GUARANTEE TRMVerifier.__init__
+    will succeed (state-dict mismatches, a missing upstream TRM import, etc. can
+    still fall back to NullTRMVerifier inside get_trm()) — this is an honest
+    approximation, not a substitute for actually calling get_trm().
+    """
+    s = get_settings()
+    if not s.trm_enabled:
+        return "désactivé (TRM_ENABLED=false)"
+    if not _TORCH_OK:
+        return "NullVerifier (torch absent — downgrade-only inopérant)"
+    if not s.trm_checkpoint.exists():
+        return "NullVerifier (checkpoint absent — downgrade-only inopérant)"
+    return "actif (checkpoint chargé)"

@@ -1,0 +1,79 @@
+# Static macro-event calendar — high-impact US macro events, 2026-2027.
+#
+# NO NETWORK CALL AT RUNTIME: this file is committed and read directly by
+# src/hermes/risk/macro_blackout.py:load_calendar (pure file read + parse). Refresh
+# it periodically — the code (macro_blackout.horizon_warning) emits a visible warning
+# once "now" is within 60 days of the calendar's honest coverage horizon.
+#
+# SOURCES (fetched 2026-07-10, each cross-checked against >=2 independent fetches of
+# the LIVE official page):
+#   - FOMC decision dates: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+#     2027 dates are the Fed's own published "tentative" 2027 schedule (press release
+#     2025-09-05): https://www.federalreserve.gov/newsevents/pressreleases/monetary20250905a.htm
+#     Decision = 2:00pm ET policy statement on the SECOND day of the two-day meeting.
+#   - CPI release dates: https://www.bls.gov/schedule/news_release/cpi.htm (08:30 ET)
+#   - Employment Situation (NFP) release dates: https://www.bls.gov/schedule/news_release/empsit.htm
+#     (08:30 ET). Verified against the official PER-MONTH schedule pages too
+#     (e.g. bls.gov/schedule/2026/02_sched.htm), not just the aggregate table — several
+#     2026 NFP dates land on a non-Friday weekday (2026-02-11 is a Wednesday,
+#     2026-07-02 is a Thursday) and that is BLS's own published schedule, not a
+#     transcription error (2026-02-11: BLS pushed the Jan-2026 release off the usual
+#     Friday, consistent with processing-schedule disruption after the 2025 federal
+#     shutdown; 2026-07-02: the July 4 federal holiday observed Fri 2026-07-03 pushes
+#     the June-2026 release to Thursday).
+#
+# HONEST HORIZON: BLS has NOT published 2027 CPI/NFP dates as of the 2026-07-10
+# retrieval date (their schedule pages stop at December 2026: last CPI 2026-12-10,
+# last NFP 2026-12-04). FOMC has published through 2027-12-08 (tentative). A blackout
+# calendar is only as good as its WORST-covered event type, so
+# macro_blackout.calendar_horizon() computes the horizon as the EARLIEST "last date"
+# across the 3 event types (today: 2026-12-04, the NFP horizon) even though FOMC
+# coverage runs a year further — do not quote the FOMC horizon as "the" horizon.
+retrieved: "2026-07-10"
+
+events:
+  # ---- FOMC decisions (2:00pm ET, second day of the two-day meeting) ----
+  - {date: "2026-01-28", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Jan 2026)"}
+  - {date: "2026-03-18", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Mar 2026)"}
+  - {date: "2026-04-29", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Apr 2026)"}
+  - {date: "2026-06-17", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Jun 2026)"}
+  - {date: "2026-07-29", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Jul 2026)"}
+  - {date: "2026-09-16", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Sep 2026)"}
+  - {date: "2026-10-28", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Oct 2026)"}
+  - {date: "2026-12-09", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Dec 2026)"}
+  - {date: "2027-01-27", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Jan 2027, tentative)"}
+  - {date: "2027-03-17", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Mar 2027, tentative)"}
+  - {date: "2027-04-28", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Apr 2027, tentative)"}
+  - {date: "2027-06-09", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Jun 2027, tentative)"}
+  - {date: "2027-07-28", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Jul 2027, tentative)"}
+  - {date: "2027-09-15", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Sep 2027, tentative)"}
+  - {date: "2027-10-27", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Oct 2027, tentative)"}
+  - {date: "2027-12-08", time_local: "14:00", tz: "America/New_York", type: fomc_decision, label: "FOMC decision (Dec 2027, tentative)"}
+
+  # ---- CPI releases (08:30 ET) — BLS published through Dec 2026 only ----
+  - {date: "2026-01-13", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Dec 2025 data)"}
+  - {date: "2026-02-13", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Jan 2026 data)"}
+  - {date: "2026-03-11", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Feb 2026 data)"}
+  - {date: "2026-04-10", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Mar 2026 data)"}
+  - {date: "2026-05-12", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Apr 2026 data)"}
+  - {date: "2026-06-10", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (May 2026 data)"}
+  - {date: "2026-07-14", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Jun 2026 data)"}
+  - {date: "2026-08-12", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Jul 2026 data)"}
+  - {date: "2026-09-11", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Aug 2026 data)"}
+  - {date: "2026-10-14", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Sep 2026 data)"}
+  - {date: "2026-11-10", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Oct 2026 data)"}
+  - {date: "2026-12-10", time_local: "08:30", tz: "America/New_York", type: cpi, label: "CPI (Nov 2026 data)"}
+
+  # ---- Employment Situation / NFP releases (08:30 ET) — BLS published through Dec 2026 only ----
+  - {date: "2026-01-09", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Dec 2025 data)"}
+  - {date: "2026-02-11", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Jan 2026 data)"}
+  - {date: "2026-03-06", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Feb 2026 data)"}
+  - {date: "2026-04-03", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Mar 2026 data)"}
+  - {date: "2026-05-08", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Apr 2026 data)"}
+  - {date: "2026-06-05", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (May 2026 data)"}
+  - {date: "2026-07-02", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Jun 2026 data)"}
+  - {date: "2026-08-07", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Jul 2026 data)"}
+  - {date: "2026-09-04", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Aug 2026 data)"}
+  - {date: "2026-10-02", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Sep 2026 data)"}
+  - {date: "2026-11-06", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Oct 2026 data)"}
+  - {date: "2026-12-04", time_local: "08:30", tz: "America/New_York", type: nfp, label: "NFP / Employment Situation (Nov 2026 data)"}
