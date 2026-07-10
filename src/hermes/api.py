@@ -341,6 +341,12 @@ def _restructuration_status(s, edge_paper_trades_observed: int) -> dict[str, Any
         "fx": {"status": "fermé", "reopen_check": "2027-07-02"},
         "global_cutoff": "2028-01-02",
         "dossier": "docs/RESTRUCTURATION_2026-07.md",
+        # Inventaire définitif du système (aptitudes/algorithmes/sûreté/venues,
+        # audit adversarial 40 vérifications, défauts corrigés le 2026-07-10) :
+        "systeme": "docs/SYSTEME_AUTONOME.md (2026-07-10 — 3 défauts de fidélité "
+                   "backtest/live corrigés : no-pyramid cross-skill, plancher de "
+                   "confiance vs sleeves auto-sélectives, résilience LLM ; adapter "
+                   "Binance réel écrit, étages re-pointés sur le compte possédé)",
         # Test S2-largeur du 2026-07-02 soir (PREREG research_breadth) — verdict à la
         # lettre : ÉCHEC (une fenêtre bear n=4 négative), malgré +75.8% d'événements
         # marginaux et joint-null p_max=0.003. Réserves : biais de survie non testé
@@ -613,7 +619,8 @@ def _restructuration_chat_block(s, edge_count: int) -> str:
     retired = r["retired"][0]
     gate = r["gate"]
     return (
-        "- RESTRUCTURATION 2026-07-02 (docs/RESTRUCTURATION_2026-07.md — source de vérité):\n"
+        "- RESTRUCTURATION 2026-07-02 (docs/RESTRUCTURATION_2026-07.md — source de vérité ; "
+        "inventaire système complet : docs/SYSTEME_AUTONOME.md, 2026-07-10):\n"
         f"  - Slate live actuel: {', '.join(r['slate']) or '(vide)'}\n"
         f"  - Retiré: {retired['skill_id']} (ex-Strategy #1 momentum) — book LOO-Δ Sharpe "
         f"{retired['loo_delta_sharpe']} (le livre double son Sharpe sans lui), joint-null p="
