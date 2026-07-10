@@ -38,7 +38,11 @@ log = get_logger(__name__)
 Decision = Literal["APPROVED", "REJECTED"]
 
 # Per-venue minimum order notional (USD). Hyperliquid rejects < $10.
-_VENUE_MIN_NOTIONAL = {"paper": 5.0, "hyperliquid": 10.0, "bybit": 5.0}
+# binanceusdm: ~5 USDT is Binance's generic USDT-M perp minNotional floor — an
+# HONEST placeholder, not per-symbol precision; real per-symbol minNotional/
+# minQty filters (they vary by contract) still need to be pulled from the
+# exchange and wired in before any real stage advance.
+_VENUE_MIN_NOTIONAL = {"paper": 5.0, "hyperliquid": 10.0, "bybit": 5.0, "binanceusdm": 5.0}
 
 
 def venue_min_notional(venue: str) -> float:

@@ -1,5 +1,7 @@
 """Fee selection routes by stage instrument (spot vs perp)."""
 
+import pytest
+
 from hermes.execution.factory import get_exchange, select_fees
 from hermes.settings import get_settings
 
@@ -56,3 +58,39 @@ def test_stage0_paper_charges_taker_not_maker_by_default():
     finally:
         get_settings.cache_clear()
         get_exchange.cache_clear()
+
+
+def test_get_exchange_returns_binanceusdm_adapter_for_binanceusdm_venue(monkeypatch):
+    """stage_1_micro's venue: binanceusdm (2026-07-10 repoint) must route to the
+    real BinanceUSDMExchange adapter, not silently fall through to paper/HL."""
+    monkeypatch.setenv("HERMES_STAGE", "stage_1_micro")
+    monkeypatch.setenv("BINANCE_API_KEY", "test-key")
+    monkeypatch.setenv("BINANCE_API_SECRET", "test-secret")
+    get_settings.cache_clear()
+    get_exchange.cache_clear()
+    try:
+        ex = get_exchange()
+        assert ex.name == "binanceusdm"
+        from hermes.execution.binance import BinanceUSDMExchange
+
+        assert isinstance(ex, BinanceUSDMExchange)
+    finally:
+        get_settings.cache_clear()
+        get_exchange.cache_clear()
+
+
+def test_get_exchange_raises_for_unknown_venue(monkeypatch):
+    """The venue dispatch must always raise on an unrecognized venue — never
+    silently default to any adapter (paper included)."""
+    from hermes.execution import factory as factory_mod
+
+    class _FakeSettings:
+        stage_config = {"venue": "mystery_venue"}
+
+    monkeypatch.setattr(factory_mod, "get_settings", lambda: _FakeSettings())
+    factory_mod.get_exchange.cache_clear()
+    try:
+        with pytest.raises(RuntimeError, match="unknown venue"):
+            factory_mod.get_exchange()
+    finally:
+        factory_mod.get_exchange.cache_clear()

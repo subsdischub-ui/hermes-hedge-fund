@@ -57,4 +57,7 @@ def get_exchange() -> Exchange:
     if venue == "bybit":
         from hermes.execution.bybit import BybitExchange
         return BybitExchange()
+    if venue == "binanceusdm":
+        from hermes.execution.binance import BinanceUSDMExchange
+        return BinanceUSDMExchange()
     raise RuntimeError(f"unknown venue: {venue}")

@@ -29,3 +29,14 @@ def test_yaml_helper():
     s = get_settings()
     assert s.yaml("loops", "market_tick") is not None
     assert s.yaml("nope", "missing", default=42) == 42
+
+
+def test_dormant_stages_point_to_binanceusdm_stage0_stays_paper():
+    """2026-07-10 config-incoherence fix: the operator holds a BINANCE account
+    (also data_venue: above — the backtest venue), NOT a Hyperliquid one, so the
+    dormant stage_1/2/3 (HERMES_STAGE is manual-only, gate is at 2/40) must point
+    at binanceusdm. stage_0_paper must stay untouched (still 'paper')."""
+    stages = get_settings().yaml("stages", default={})
+    assert stages["stage_0_paper"]["venue"] == "paper"
+    for stage in ("stage_1_micro", "stage_2_normal", "stage_3_perps"):
+        assert stages[stage]["venue"] == "binanceusdm", stage

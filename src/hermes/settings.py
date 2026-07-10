@@ -74,6 +74,12 @@ class Settings(BaseSettings):
     bybit_api_key: SecretStr = Field(SecretStr(""), alias="BYBIT_API_KEY")
     bybit_api_secret: SecretStr = Field(SecretStr(""), alias="BYBIT_API_SECRET")
     bybit_testnet: bool = Field(True, alias="BYBIT_TESTNET")
+    # Binance USDT-M perp — the operator's REAL account (also data_venue: above).
+    # 2026-07-10: added so execution/binance.py can refuse to instantiate without
+    # both key+secret (same "refusing live mode" contract as Hyperliquid/Bybit).
+    binance_api_key: SecretStr = Field(SecretStr(""), alias="BINANCE_API_KEY")
+    binance_api_secret: SecretStr = Field(SecretStr(""), alias="BINANCE_API_SECRET")
+    binance_testnet: bool = Field(True, alias="BINANCE_TESTNET")
 
     # Data
     cryptopanic_token: SecretStr = Field(SecretStr(""), alias="CRYPTOPANIC_TOKEN")

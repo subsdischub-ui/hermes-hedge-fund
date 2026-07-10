@@ -40,9 +40,18 @@ stages:
       walk_forward_sharpe: 1.0
       max_drawdown_pct: 15.0
 
+  # 2026-07-10: repointed stage_1/2/3 from venue: hyperliquid -> binanceusdm.
+  # Config-incoherence audit: the operator holds a BINANCE account (also the
+  # data_venue: above, i.e. the venue the strategies were backtested on) but NO
+  # Hyperliquid account — these dormant stages would have refused to instantiate
+  # on first real advance (HyperliquidExchange requires HL credentials that don't
+  # exist) and, before that, traded on a venue that never matched the backtested
+  # data. Aligning execution on the account actually held closes that backtest-
+  # Binance/execution-Hyperliquid gap. Purely config: the gate is at 2/40 and
+  # HERMES_STAGE is manual-only, so nothing live changes at stage_0 (paper).
   stage_1_micro:
-    venue: hyperliquid
-    instruments: perp        # Hyperliquid has no native BTC/ETH/SOL spot — perps only
+    venue: binanceusdm
+    instruments: perp        # Binance USDT-M perp — no native BTC/ETH/SOL spot on this venue
     leverage_initial: 1      # 1x = no leverage (perp behaves ~spot economically)
     leverage_max: 1
     per_trade_risk_cap_pct: 0.5
@@ -54,8 +63,8 @@ stages:
       rule_violations: 0
 
   stage_2_normal:
-    venue: hyperliquid
-    instruments: perp        # perps only on Hyperliquid; still 1x at the "normal" stage
+    venue: binanceusdm
+    instruments: perp        # perps only; still 1x at the "normal" stage
     leverage_initial: 1
     leverage_max: 1
     per_trade_risk_cap_pct: 2.0
@@ -67,7 +76,7 @@ stages:
       profit_factor: 1.3
 
   stage_3_perps:
-    venue: hyperliquid
+    venue: binanceusdm
     instruments: perp
     leverage_initial: 1
     leverage_max: 2

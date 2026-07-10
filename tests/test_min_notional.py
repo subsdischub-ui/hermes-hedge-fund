@@ -9,4 +9,5 @@ def test_venue_min_notional():
     assert venue_min_notional("paper") == 5.0
     assert venue_min_notional("hyperliquid") == 10.0
     assert venue_min_notional("bybit") == 5.0
+    assert venue_min_notional("binanceusdm") == 5.0
     assert venue_min_notional("unknown") == 10.0  # conservative default for live venues
