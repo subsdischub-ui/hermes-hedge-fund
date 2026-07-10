@@ -37,8 +37,8 @@ self-contained) and can be overridden from JSON artifacts under ``research_strea
 from __future__ import annotations
 
 import json
-import re
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
