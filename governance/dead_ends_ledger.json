@@ -590,5 +590,20 @@
       "global account long short ratio",
       "aggregate positioning contrarian"
     ]
+  },
+  {
+    "name": "Perp taker-flow imbalance extreme CONTINUATION (taker_perp_prereg)",
+    "book": "crypto",
+    "date": "2026-07-10",
+    "what_tested": "Imbalance quotidien = (taker_buy_usd - taker_sell_usd)/(taker_buy_usd + taker_sell_usd), source coinglass taker_volume perp (Binance-aggregated), z-score trailing 180x1d ddof=0, |z|>=2 CONTINUATION symetrique (z>=+2 LONG, z<=-2 SHORT), hold 2x1d, lag1 causal, 15bps RT, univers decisif BTC/ETH/SOL/AVAX + annexe ARB/SUI/WIF, panier date-level dedup event_basket_gate.",
+    "why_dead": "Joint-null date-level (panier 4 decisifs, no-overlap) mc_p stable 0.6225-0.6530 sur 5 seeds (>>0.05, et dans le sens defavorable : le random-entry null bat la strategie ~63% du temps) ; basket OOS-by-date sharpe = -0.110 (negatif) ; 3/4 symboles decisifs individuellement OOS-negatifs ; DSR vs N=1910 = 0.000215 (quasi-nul). Pas un probleme de couverture (2022 a 57 evenements panier) ni de redux momentum (rho max 0.192) -- absence pure de signal net de cout.",
+    "kill_metric": "mc_p in [0.6225, 0.6530] (5 seeds, requis <0.05) ; basket oos_sharpe=-0.110 (requis >0) ; DSR=0.000215",
+    "revive_condition": "Un axe de donnees genuinement nouveau (p.ex. tape CME futures intraday reel / CVD trade-level, pas l'agregat quotidien CoinGlass) -- l'agregat journalier taker-volume perp tel qu'achete est epuise pour la forme CONTINUATION testee ici. Le cote CONTRARIAN reste techniquement non teste (interdit par ce PREREG, pas un revive_condition -- necessiterait son PROPRE pre-enregistrement independant, pas une reouverture de cette entree).",
+    "tags": [
+      "taker perp imbalance continuation",
+      "perp taker flow prereg",
+      "coinglass taker volume perp",
+      "aggressive flow continuation extreme z"
+    ]
   }
 ]

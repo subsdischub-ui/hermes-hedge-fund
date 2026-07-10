@@ -370,3 +370,15 @@ condition de résurrection. L'écran taker-perp sort CANDIDAT (ρ prix < 0.2) �
 est un pré-enregistrement séparé, décision opérateur. La piste largeur est CLOSE (décision
 opérateur). Bilan honnête de l'exploitation du lake payé : ses axes sont désormais TOUS adjugés
 sauf un candidat sous condition — l'abonnement a produit des verdicts, pas des edges.
+
+**Verdict du dernier axe — taker-flow perp continuation (nuit du 2026-07-03, registre → 1910,
+doublement reproduit bit-à-bit) : MORT.** Panier BTC/ETH/SOL/AVAX (277 événements dé-chevauchés) :
+joint-null p ∈ [0.622, 0.653] sur 5 seeds — le hasard bat la stratégie ~63 % du temps — ET
+OOS −0.110 ; DSR ≈ 0.0002. Garde-fous sains (pas un redux : |ρ| momentum ≤ 0.19 ; 2022 couvert
+par 57 événements) : la forme meurt sur l'absence pure de signal, pas sur un artefact.
+Ledger #38. **Le lake CoinGlass payé est désormais 100 % ADJUGÉ — zéro axe non testé restant.**
+Conséquence économique directe : l'abonnement ($34/mois) peut être suspendu sans perte (données
+gelées sur disque, re-souscription à la demande) — la seule rentabilité certaine disponible
+cette semaine, décision opérateur. Incident d'instrument documenté au passage (R2) : le
+matching par sous-chaîne du DeadEndsLedger a produit un faux BLOCKED par collision de tags —
+défaut connu à durcir, consigné au journal.

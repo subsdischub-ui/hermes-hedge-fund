@@ -355,18 +355,23 @@ def _restructuration_status(s, edge_paper_trades_observed: int) -> dict[str, Any
             "reserves": ["biais de survie non testé", "2022: zéro événement z>=2"],
             "next": "CLOS (décision opérateur 2026-07-02 : pas de test durci)",
         },
-        # Carte lake-vs-ledger du 2026-07-02 nuit : sur tout le lake CoinGlass payé,
-        # 2 axes étaient non-adjugés. Le n°1 a été testé le soir même (pré-enregistré,
-        # registre 1909, doublement reproduit) : MORT — vrai zéro, pas un redux
-        # (anti-momentum ρ max 0.337 < 0.7 ; orthogonal S2 ρ=-0.096). Ledger #37.
+        # Carte lake-vs-ledger du 2026-07-02/03 : les 2 derniers axes non-adjugés du
+        # lake CoinGlass payé ont été testés dans la même nuit (pré-enregistrés,
+        # registre 1909 puis 1910, chacun doublement reproduit par audits). Tous deux
+        # MORTS proprement — le lake est désormais 100 % ADJUGÉ, zéro axe restant.
         "lake_axes": {
+            "statut_global": "LAKE 100% ADJUGÉ (2026-07-03) — zéro axe non testé restant ; "
+                             "l'abonnement CoinGlass peut être suspendu (données gelées sur "
+                             "disque, re-souscription à la demande) — décision opérateur",
             "global_lsr_contrarian": {
                 "verdict": "MORT 2026-07-02 (joint-null p 0.12-0.14 x5 seeds ET OOS -0.15 ; DSR≈0)",
                 "ledger": "#37",
             },
             "taker_volume_perp": {
-                "verdict": "CANDIDAT (écran anti-redux passé : ρ prix < 0.2) — pré-enregistrement "
-                           "futur = décision opérateur",
+                "verdict": "MORT 2026-07-03 (joint-null p 0.62-0.65 x5 seeds — le hasard bat la "
+                           "stratégie 63% du temps — ET OOS -0.11 ; garde-fous sains : pas un "
+                           "redux, 57 événements en 2022)",
+                "ledger": "#38",
             },
             "top_lsr_daily_contrarian": {
                 "verdict": "MORT (ledger #25, Stream 2 sur historique complet) — la collecte "
@@ -632,7 +637,10 @@ def _restructuration_chat_block(s, edge_count: int) -> str:
         )
         + (
             "  - Data lake CoinGlass (payé, inventorié 2026-07-02) : "
-            + " ; ".join(f"{k} → {v.get('verdict')}" for k, v in la.items())
+            + " ; ".join(
+                f"{k} → {v.get('verdict') if isinstance(v, dict) else v}"
+                for k, v in la.items()
+            )
             + ".\n"
             if (la := r.get("lake_axes")) else ""
         )
