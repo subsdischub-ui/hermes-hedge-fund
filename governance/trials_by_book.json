@@ -75,6 +75,10 @@
       {
         "n": 1,
         "source": "taker_perp_prereg"
+      },
+      {
+        "n": 1,
+        "source": "s2_breadth_hardened_prereg"
       }
     ],
     "fx_metals": [
@@ -96,8 +100,5 @@
       }
     ]
   },
-  "seeded": true,
-  "sources": {
-    "s2_breadth_hardened_prereg": 1
-  }
+  "seeded": true
 }

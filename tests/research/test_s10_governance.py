@@ -551,3 +551,29 @@ def test_ledger_word_boundary_prevents_inner_substring_hits():
     # deux tags en mots entiers -> BLOCKED
     assert custom.check("an ofi and cvd microstructure respend")["verdict"] \
         is gov.LedgerVerdict.BLOCKED
+
+
+def test_committed_registry_provenance_reconciles_with_counts():
+    """Chaque `counts[book]` DOIT être la somme des `provenance[book][*].n`.
+
+    Garde-fou né d'un vrai défaut (2026-07-16) : un bump du registre écrit à la main
+    avait incrémenté `counts` sans écrire la provenance (et créé une clé racine
+    `sources` hors-schéma que rien ne lit). Les tests d'alors n'épinglaient QUE
+    `counts` — la dérive est passée verte. Le registre est l'instrument qui fixe la
+    barre de déflation de tout le livre : un compteur sans provenance est un compteur
+    non auditable. Tout bump passe par `BookTrialRegistry.bump()`, jamais à la main.
+    """
+    import json as _json
+
+    payload = _json.loads(
+        (gov.governance_registry_dir() / "trials_by_book.json").read_text()
+    )
+    assert set(payload) == {"counts", "provenance", "seeded"}, (
+        "schéma du registre : aucune clé racine hors {counts, provenance, seeded}"
+    )
+    for book, count in payload["counts"].items():
+        traced = sum(entry["n"] for entry in payload["provenance"].get(book, []))
+        assert traced == count, (
+            f"livre '{book}' : counts={count} mais provenance ne trace que {traced} essais "
+            f"(écart {count - traced}) — tout essai compté doit nommer sa source"
+        )
