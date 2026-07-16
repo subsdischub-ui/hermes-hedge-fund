@@ -1,0 +1,187 @@
+{
+  "prereg_source": "s2_breadth_hardened_prereg",
+  "registry_n_at_calc": 1911,
+  "dead_qualified_coins": [
+    "MKR",
+    "BLZ",
+    "FTM",
+    "REEF"
+  ],
+  "dead_screening_summary": {
+    "n_candidates_settling_exchangeinfo": 122,
+    "n_candidates_historical_pre_settling_tested_via_web": 9,
+    "n_candidates_total_tested": 131,
+    "n_qualified_point_in_time": 4
+  },
+  "dead_entry_exit": {
+    "MKR": {
+      "entry_date": "2023-08-15",
+      "delisting_date": "2025-09-08",
+      "n_events_point_in_time": 205,
+      "n_events_dropped_pre_entry": 206
+    },
+    "BLZ": {
+      "entry_date": "2023-09-18",
+      "delisting_date": "2025-06-19",
+      "n_events_point_in_time": 124,
+      "n_events_dropped_pre_entry": 209
+    },
+    "FTM": {
+      "entry_date": "2023-12-26",
+      "delisting_date": "2025-06-19",
+      "n_events_point_in_time": 143,
+      "n_events_dropped_pre_entry": 277
+    },
+    "REEF": {
+      "entry_date": "2024-09-13",
+      "delisting_date": "2025-06-19",
+      "n_events_point_in_time": 19,
+      "n_events_dropped_pre_entry": 234
+    }
+  },
+  "basket_survivors_only_12": {
+    "n_events_deduped": 167,
+    "span_years": 6.8145106091718,
+    "n_events_per_year": 24.50652872639614,
+    "sleeve_mean_net_bps": 270.3300140930938,
+    "sleeve_sharpe": 0.30386627929950905,
+    "oos_sharpe_40pct": 0.3161713742406749,
+    "mc_p_seed0": 0.003
+  },
+  "basket_hardened_12plus4": {
+    "n_events_deduped": 172,
+    "span_years": 6.8145106091718,
+    "n_events_per_year": 25.240257131378062,
+    "sleeve_mean_net_bps": 236.57328660538008,
+    "sleeve_sharpe": 0.2727015679344437,
+    "oos_sharpe_40pct": 0.24468120828358544,
+    "mc_p_seed0": 0.0066,
+    "mc_p_5seeds": [
+      0.0066,
+      0.006,
+      0.0068,
+      0.0072,
+      0.007
+    ],
+    "mc_p_max_5seeds": 0.0072,
+    "mc_p_stable_lt05": true
+  },
+  "marginal_events_hardened_vs_survivors": {
+    "n_marginal_dates": 25,
+    "pct_increase_vs_survivors_only": 14.97005988023952,
+    "mean_net_bps": 357.55449571904694,
+    "n_used_for_mean": 25,
+    "by_year": {
+      "2023": 12,
+      "2024": 10,
+      "2025": 3
+    }
+  },
+  "oos_by_date_halves_hardened_basket": {
+    "in_sample_first_half": {
+      "mean_net_bps": 319.59866388376406,
+      "sharpe": 0.3235022287798745,
+      "n": 79
+    },
+    "out_of_sample_second_half": {
+      "mean_net_bps": 166.04635321836574,
+      "sharpe": 0.22181110661759915,
+      "n": 93
+    }
+  },
+  "bear_window_check_hardened": {
+    "2022_full": {
+      "lo_date": "2022-01-01",
+      "hi_date": "2022-12-31",
+      "mean_net_bps": null,
+      "n_events": 0
+    },
+    "drawdown25_seg0": {
+      "lo_date": "2019-09-30",
+      "hi_date": "2020-04-28",
+      "mean_net_bps": 205.38808328376763,
+      "n_events": 127
+    },
+    "drawdown25_seg1": {
+      "lo_date": "2021-01-21",
+      "hi_date": "2021-10-04",
+      "mean_net_bps": 829.9077485425073,
+      "n_events": 680
+    },
+    "drawdown25_seg2": {
+      "lo_date": "2021-12-04",
+      "hi_date": "2024-02-26",
+      "mean_net_bps": 160.86053663451162,
+      "n_events": 1263
+    },
+    "drawdown25_seg3": {
+      "lo_date": "2024-07-05",
+      "hi_date": "2024-09-09",
+      "mean_net_bps": -622.8293402259832,
+      "n_events": 4
+    },
+    "drawdown25_seg4": {
+      "lo_date": "2025-02-28",
+      "hi_date": "2025-04-11",
+      "mean_net_bps": 645.2220179017739,
+      "n_events": 7
+    },
+    "drawdown25_seg5": {
+      "lo_date": "2025-11-16",
+      "hi_date": "2026-07-02",
+      "mean_net_bps": 49.32491822192688,
+      "n_events": 104
+    }
+  },
+  "bear_window_check_survivors_only_crosscheck": {
+    "2022_full": {
+      "mean_net_bps": null,
+      "n_events": 0
+    },
+    "drawdown25_seg0": {
+      "mean_net_bps": 205.38808328376763,
+      "n_events": 127
+    },
+    "drawdown25_seg1": {
+      "mean_net_bps": 829.9077485425073,
+      "n_events": 680
+    },
+    "drawdown25_seg2": {
+      "mean_net_bps": 169.241364551723,
+      "n_events": 1017
+    },
+    "drawdown25_seg3": {
+      "mean_net_bps": -591.1938332454913,
+      "n_events": 4
+    },
+    "drawdown25_seg4": {
+      "mean_net_bps": 779.5990968054681,
+      "n_events": 7
+    },
+    "drawdown25_seg5": {
+      "mean_net_bps": 49.32491822192688,
+      "n_events": 104
+    }
+  },
+  "bear_all_positive_hardened": false,
+  "blindness_2022": {
+    "n_events_2022_survivors_only_raw": 0,
+    "n_events_2022_dead_raw": 0,
+    "n_events_2022_hardened_total_raw": 0,
+    "resolved": false,
+    "note": "tous les morts qualifies ont une date d'entree point-in-time en 2023 ou 2024 (aucun n'atteint le seuil vol30j+funding3ans avant 2022) -- la cecite 2022 ne PEUT PAS etre resolue par ce durcissement, par construction."
+  },
+  "dsr_hardened_at_registry_n": 0.0002721872165791281,
+  "sr_variance_proxy_hardened": 0.023233790238330363,
+  "cost_forced_exit_bps": 30.0,
+  "mechanical_checks_hardened": {
+    "marginal_gte_50pct": false,
+    "joint_null_lt_05": true,
+    "oos_positive": true,
+    "bear_all_positive": false,
+    "fail_reasons": [
+      "marginaux durci=25 (+15.0%) < seuil +50%",
+      "bear-window durci ECHOUE: {'drawdown25_seg3': -622.8293402259832}"
+    ]
+  }
+}

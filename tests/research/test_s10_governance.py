@@ -577,3 +577,67 @@ def test_committed_registry_provenance_reconciles_with_counts():
             f"livre '{book}' : counts={count} mais provenance ne trace que {traced} essais "
             f"(écart {count - traced}) — tout essai compté doit nommer sa source"
         )
+
+
+# --------------------------------------------------------------------------- #
+# 10.2 — les 3 verdicts mécanisés le 2026-07-16 (trou R3 : verdicts en prose)
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "proposal",
+    [
+        "elargir l'univers S2 a 20 perps binance pour plus d'evenements",
+        "élargir l'univers S2 pour augmenter le débit d'événements",
+        "widen s2 universe with more liquid alts",
+        "expand the s2 universe to 30 perps",
+        "more perps for the funding squeeze sleeve",
+    ],
+)
+def test_ledger_blocks_s2_breadth_respend(proposal):
+    """La piste largeur S2 est CLOSE (2 préreg, échecs indépendants — PREREG_HARDENED).
+
+    Elle a coûté 3 essais au registre ; sans garde codée, la prochaine pulsion
+    « plus d'événements » la re-propose comme neuve. Les tags sont calibrés sur la
+    règle _match (>=2 tags OU un tag >=4 mots) : une re-proposition formulée
+    naturellement DOIT mordre seule.
+    """
+    verdict = gov.DeadEndsLedger().check(proposal)
+    assert verdict["verdict"] is gov.LedgerVerdict.BLOCKED
+    assert "BREADTH" in verdict["matched"]
+
+
+@pytest.mark.parametrize(
+    ("proposal", "entry_fragment"),
+    [
+        ("tokenized stock perps on hyperliquid as a funding sleeve", "Equity perps"),
+        ("port the funding squeeze to SPX perp funding axis", "Equity perps"),
+        ("london session breakout on GBPUSD 1h channel", "FX London-session"),
+        ("fx channel breakout at london open, hold 12h", "FX London-session"),
+    ],
+)
+def test_ledger_blocks_the_two_prose_only_verdicts(proposal, entry_fragment):
+    """Perps actions/tokenisées et FX London breakout ne vivaient qu'en PROSE
+    (RESTRUCTURATION §2, LAB_JOURNAL FX) — rien ne les empêchait mécaniquement
+    d'être re-proposés. Trou R3 relevé par l'audit adversarial du 2026-07-16."""
+    verdict = gov.DeadEndsLedger().check(proposal)
+    assert verdict["verdict"] is gov.LedgerVerdict.BLOCKED
+    assert entry_fragment in verdict["matched"]
+
+
+@pytest.mark.parametrize(
+    "proposal",
+    [
+        "cross-venue bybit funding as a new data axis",        # le revive_condition NOMMÉ
+        "hyperliquid hourly funding requalified from scratch",  # autre cadence, autre prereg
+        "funding squeeze continuation on the validated basket",  # l'ancre elle-même
+        "mean reversion regime RSI2 on SOL",                    # le reste du slate live
+        "options skew 25 delta collect-now",
+    ],
+)
+def test_ledger_does_not_false_block_legitimate_work(proposal):
+    """Le pendant du 2026-07-03 (faux-BLOCAGE d'un axe disjoint) : les 3 nouvelles
+    entrées ne doivent JAMAIS bloquer le slate vivant ni les axes explicitement
+    laissés ouverts par leur propre revive_condition."""
+    verdict = gov.DeadEndsLedger().check(proposal)
+    assert verdict["verdict"] is gov.LedgerVerdict.NOT_A_DEAD_END, (
+        f"faux blocage sur '{proposal}' -> {verdict['matched']}"
+    )

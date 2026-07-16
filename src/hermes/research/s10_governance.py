@@ -1042,6 +1042,44 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
               "london session breakout", "session breakout fx", "fx channel breakout",
               "channel breakout", "london open", "breakout london open"),
     ),
+    DeadEnd(
+        "S2 funding-squeeze BREADTH (universe expansion beyond the validated basket)", "crypto",
+        "2026-07-02 (PREREG) puis 2026-07-16 (PREREG_HARDENED — clôture définitive)",
+        "Élargir la règle S2 GELÉE (z>=2, fenêtre 180, hold 24x4h) du panier validé (BTC/ETH/SOL "
+        "+ SUI/ARB/WIF/AVAX) à un univers plus large de perps Binance USDT-M liquides, pour "
+        "multiplier le DÉBIT d'événements (~13/an) sans toucher à la règle. Deux essais comptés : "
+        "s2_breadth_prereg (survivants seuls) et s2_breadth_hardened_prereg (univers point-in-time "
+        "INCLUANT les délistés, la seule suite autorisée par le verdict du 2026-07-02).",
+        "Les DEUX essais échouent à la lettre de leur propre pré-enregistrement, sur des critères "
+        "INDÉPENDANTS. Essai 1 (survivants, 12 perps) : +75.8 % d'événements marginaux et joint-null "
+        "p_max5=0.003, MAIS la fenêtre bear 2024-07→09 (n=4) est négative — zéro tolérance. Essai 2 "
+        "(durci, 12+4 morts qualifiés sur 131 candidats testés) : les événements marginaux tombent à "
+        "+15.0 % (seuil +50 %) ET la même fenêtre bear reste négative (-622.8 bps, n=4). Le "
+        "durcissement MESURE enfin le biais de survie soupçonné par l'audit et le CONFIRME : "
+        "l'inclusion des morts fait tomber l'edge de +270.3 -> +236.6 bps/évt (-12.5 %), le Sharpe "
+        "de 0.304 -> 0.273 et l'OOS-by-date de 0.316 -> 0.245 (-23 %) — le chiffre publié sur les "
+        "survivants était bien gonflé. DSR au N réel du registre (1911) = 0.00027. Réserve "
+        "STRUCTURELLE et non résoluble : ZÉRO événement z>=2 en 2022 sur l'univers durci (les 4 "
+        "morts qualifiés n'entrent qu'en 2023-2024) — le bear-check est aveugle au cœur d'un crash, "
+        "S2 étant un phénomène de rebond, pas de chute.",
+        "durci: marginaux +15.0% < seuil +50% ET bear 2024-07→09 = -622.8 bps (n=4); "
+        "biais de survie mesuré: edge -12.5%, OOS -23%; DSR vs N=1911 = 0.00027; 0 évt 2022",
+        "Une largeur d'une AUTRE nature, jamais un ré-élargissement de l'univers Binance : "
+        "cross-venue (Bybit — 6,3 ans de funding vérifiés, re-test >= 2026-11) ou une cadence de "
+        "funding distincte requalifiée depuis zéro (Hyperliquid horaire). Chacune exige son PROPRE "
+        "pré-enregistrement — ce n'est PAS une réouverture de cette entrée. Ne JAMAIS re-découper "
+        "les fenêtres, abaisser z, ni retirer post-hoc la fenêtre bear qui fâche.",
+        # Tags calibrés sur la règle _match (>=2 tags distincts OU un tag >=4 mots) : une
+        # re-proposition formulée naturellement doit mordre SEULE, d'où les variantes >=4
+        # mots ; les tags courts servent aux combinaisons 2-hits. Sondés par
+        # test_ledger_blocks_s2_breadth_respend + le pendant anti-faux-blocage.
+        tags=("s2 breadth", "largeur s2", "funding squeeze breadth", "breadth universe expansion",
+              "s2 universe", "univers s2", "widen s2 universe", "elargir l'univers",
+              "élargir l'univers", "widen the s2 universe", "expand the s2 universe",
+              "s2 universe expansion", "funding squeeze wider universe",
+              "funding squeeze universe expansion", "wider universe for the funding squeeze",
+              "more perps for the funding squeeze"),
+    ),
 ]
 
 
