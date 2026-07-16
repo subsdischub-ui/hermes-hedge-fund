@@ -81,6 +81,19 @@ async def lifespan(app: FastAPI):
     log = get_logger(__name__)
     log.info("hermes_starting", stage=s.stage, bankroll=s.bankroll_usd, universe=s.universe)
     await get_db().init()
+    # Réconcilie le volume de gouvernance persistant avec le committé (idempotent,
+    # union par source — jamais un écrasement). Sans ça le volume, semé une fois et
+    # jamais re-synchronisé, fige le compte d'essais : mesuré le 2026-07-16, le
+    # dashboard servait crypto=1892 quand le repo comptait 1911 (les 19 préregs
+    # locaux non miroités). Fail-soft par construction : ne peut pas empêcher le
+    # démarrage de l'agent.
+    try:
+        from hermes.research.s10_governance import reconcile_governance_volume
+
+        recon = reconcile_governance_volume()
+        log.info("governance_volume_reconciled", **recon)
+    except Exception as e:
+        log.warning("governance_reconcile_failed", error=str(e))
     # Rehydrate skill archival from disk so weekly decisions persist across restarts.
     from hermes.skills import get_skill_library
     await get_skill_library().reload_archival_from_db()

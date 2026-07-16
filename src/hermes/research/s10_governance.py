@@ -97,7 +97,89 @@ def governance_registry_dir() -> Path:
     env = os.environ.get("HERMES_GOVERNANCE_DIR")
     if env:
         return Path(env)
+    return repo_governance_dir()
+
+
+def repo_governance_dir() -> Path:
+    """Le ``governance/`` COMMITTÉ, quel que soit ``HERMES_GOVERNANCE_DIR``.
+
+    C'est la source de vérité de :func:`reconcile_governance_volume` : sans lui, on
+    réconcilierait le volume avec lui-même (l'override d'env pointant ailleurs).
+    """
     return Path(__file__).resolve().parents[3] / "governance"
+
+
+def reconcile_governance_volume(volume_dir: Path | str | None = None) -> dict:
+    """Fusionne la gouvernance COMMITTÉE dans le volume persistant. Idempotent.
+
+    Pourquoi : en prod, ``HERMES_GOVERNANCE_DIR`` pointe un volume Docker qui a été
+    semé une fois et jamais re-synchronisé. Mesuré le 2026-07-16 : le dashboard
+    servait ``crypto: 1892`` quand le repo comptait 1911 — l'écart étant exactement les
+    19 essais pré-enregistrés en local et jamais miroités. Un compte d'essais faux à
+    l'écran ment à l'opérateur (règle de visibilité) et, s'il était lu par une décision,
+    abaisserait la barre de déflation.
+
+    Pourquoi une UNION et pas un écrasement : ``forward.prereg.register_preregs()``
+    bumpe côté prod. Le repo se trouve être aujourd'hui un sur-ensemble strict (aucune
+    source prod n'en est absente — vérifié), mais un écrasement effacerait le premier
+    prereg enregistré en prod et non miroité. La fusion prend donc, PAR SOURCE, le max
+    des deux côtés : monotone, idempotente, sans perte possible. ``counts`` est ensuite
+    RECALCULÉ depuis la provenance, ce qui maintient par construction l'invariant
+    « tout essai compté nomme sa source ».
+
+    Le ledger et la carte d'acquisition sont code-as-truth (déjà épinglés par
+    ``test_governance_snapshots_are_synced_with_embedded_defaults``) : le committé
+    remplace la copie du volume. Fail-soft : ne lève jamais — au pire le volume reste
+    tel quel et l'appelant logue.
+    """
+    repo = repo_governance_dir()
+    vol = Path(volume_dir) if volume_dir is not None else governance_registry_dir()
+    summary: dict = {"volume": str(vol), "trials_changed": False, "files_copied": []}
+    if vol.resolve() == repo.resolve():
+        summary["skipped"] = "volume is the repo itself"
+        return summary
+
+    try:
+        vol.mkdir(parents=True, exist_ok=True)
+        repo_trials = json.loads((repo / "trials_by_book.json").read_text())
+        vol_path = vol / "trials_by_book.json"
+        vol_trials = (
+            json.loads(vol_path.read_text())
+            if vol_path.exists()
+            else {"counts": {}, "provenance": {}, "seeded": True}
+        )
+
+        merged_prov: dict[str, list[dict]] = {}
+        for book in set(repo_trials.get("provenance", {})) | set(vol_trials.get("provenance", {})):
+            by_source: dict[str, int] = {}
+            for side in (vol_trials, repo_trials):  # repo en dernier: il gagne à égalité
+                for entry in side.get("provenance", {}).get(book, []):
+                    src = entry.get("source", "")
+                    by_source[src] = max(by_source.get(src, 0), int(entry.get("n", 0)))
+            merged_prov[book] = [{"source": s, "n": n} for s, n in sorted(by_source.items())]
+
+        merged = {
+            "counts": {b: sum(e["n"] for e in p) for b, p in merged_prov.items()},
+            "provenance": merged_prov,
+            "seeded": True,
+        }
+        if merged != vol_trials:
+            vol_path.write_text(json.dumps(merged, indent=2, sort_keys=True))
+            summary["trials_changed"] = True
+        summary["counts_after"] = merged["counts"]
+
+        for name in ("dead_ends_ledger.json", "acquisition_map.json"):
+            src_file = repo / name
+            if not src_file.exists():
+                continue
+            dst = vol / name
+            payload = src_file.read_text()
+            if not dst.exists() or dst.read_text() != payload:
+                dst.write_text(payload)
+                summary["files_copied"].append(name)
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as e:  # fail-soft
+        summary["error"] = f"{type(e).__name__}: {e}"
+    return summary
 
 
 # --------------------------------------------------------------------------- #
