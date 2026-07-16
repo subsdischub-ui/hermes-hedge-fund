@@ -321,6 +321,19 @@ est un phénomène de rebond, pas de chute). Suite honnête : soit UN test durci
 (univers reconstruit AVEC les perps délistés — un test plus dur, pas plus facile), soit
 clôture de la piste. Pas de re-découpage des fenêtres, pas de 3e chance.
 
+> **VERDICT DU TEST DURCI (2026-07-16, `research_breadth/PREREG_HARDENED.md`, registre
+> 1910→1911) : ÉCHEC → LA PISTE LARGEUR EST CLOSE.** Deux critères indépendants échouent à la
+> lettre : événements marginaux **+15.0 %** (seuil +50 %) et fenêtre bear 2024-07→09 toujours
+> négative (**−622.8 bps**, n=4). Le durcissement a fait ce pour quoi il existait — **mesurer le
+> biais de survie, et il le confirme** : avec les délistés (4 qualifiés sur 131 candidats testés),
+> l'edge tombe de **+270.3 → +236.6 bps/évt (−12.5 %)** et l'OOS-by-date de **0.316 → 0.245
+> (−23 %)**. Le chiffre publié plus haut sur les survivants était bien gonflé. La cécité 2022
+> (0 événement z≥2) est **structurelle et non résoluble** par cette voie. Clôture MÉCANISÉE au
+> `DeadEndsLedger` (entrée « S2 funding-squeeze BREADTH », prouvée mordante par mutation), pas
+> seulement déclarée ici. Réveil autorisé : uniquement une largeur d'AUTRE nature avec son propre
+> pré-enregistrement (cross-venue Bybit ≥ 2026-11, ou cadence Hyperliquid requalifiée). Détail
+> chiffré et vérification par ré-exécution : `research_breadth/JOURNAL.md` §9.
+
 **Éclaireurs hors-repo :** token unlocks = axe verrouillé par les données (toute l'industrie a
 mis l'historique derrière un paywall ; le pattern J-30 est déjà publié par Keyrock sur 16k
 événements — valeur différentielle douteuse ; option : CryptoRank Basic $19/mois, décision

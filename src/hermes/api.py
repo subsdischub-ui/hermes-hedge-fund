@@ -441,19 +441,44 @@ def _restructuration_status(s, edge_paper_trades_observed: int) -> dict[str, Any
                    "backtest/live corrigés : no-pyramid cross-skill, plancher de "
                    "confiance vs sleeves auto-sélectives, résilience LLM ; adapter "
                    "Binance réel écrit, étages re-pointés sur le compte possédé)",
-        # Test S2-largeur du 2026-07-02 soir (PREREG research_breadth) — verdict à la
-        # lettre : ÉCHEC (une fenêtre bear n=4 négative), malgré +75.8% d'événements
-        # marginaux et joint-null p_max=0.003. Réserves : biais de survie non testé
-        # (signe défavorable), 2022 sans aucun événement z>=2 (bear-check aveugle au
-        # coeur du crash). Suite honnête = un seul test DURCI pré-enregistré (univers
-        # incluant les perps délistés) — pas de re-découpage des fenêtres.
+        # Test S2-largeur : DEUX essais pré-enregistrés, DEUX échecs à la lettre → piste
+        # CLOSE et mécanisée au DeadEndsLedger (entrée "S2 funding-squeeze BREADTH",
+        # prouvée mordante par mutation — R3). L'essai durci du 2026-07-16 (univers
+        # point-in-time AVEC les délistés) a fait ce pour quoi il existait : MESURER le
+        # biais de survie soupçonné par l'audit, et il le CONFIRME (edge -12.5%,
+        # OOS -23%). La cécité 2022 est structurelle, non résoluble par cette voie.
         "breadth_test": {
-            "date": "2026-07-02",
-            "verdict": "ÉCHEC (lettre du PREREG — bear-window n=4 négative)",
-            "marginal_events_pct": 75.8,
-            "joint_null_p_max5": 0.003,
-            "reserves": ["biais de survie non testé", "2022: zéro événement z>=2"],
-            "next": "CLOS (décision opérateur 2026-07-02 : pas de test durci)",
+            "date": "2026-07-02 (essai 1) ; 2026-07-16 (essai 2, durci)",
+            "verdict": "ÉCHEC x2 → PISTE CLOSE (mécanisée au ledger, entrée #41)",
+            "essai_1_survivants": {
+                "marginal_events_pct": 75.8,
+                "joint_null_p_max5": 0.003,
+                "echec": "fenêtre bear 2024-07→09 négative (n=4), zéro tolérance",
+            },
+            "essai_2_durci": {
+                "univers": "point-in-time AVEC délistés (4 qualifiés / 131 candidats testés)",
+                "marginal_events_pct": 15.0,
+                "joint_null_p_max5": 0.0072,
+                "oos_by_date_bps": 166.05,
+                "dsr_at_registry_1911": 0.00027,
+                "echecs": [
+                    "marginaux +15.0% < seuil +50%",
+                    "fenêtre bear 2024-07→09 toujours négative (-622.8 bps, n=4)",
+                ],
+            },
+            "biais_de_survie_MESURÉ": {
+                "edge_bps_par_evt": "+270.3 (survivants) → +236.6 (avec les morts) = -12.5%",
+                "oos_by_date": "0.316 → 0.245 = -23%",
+                "lecture": "le chiffre publié sur les survivants était bien gonflé — "
+                           "l'audit avait raison",
+            },
+            "reserve_non_resolue": "2022 : zéro événement z>=2 même sur l'univers durci "
+                                   "(les 4 morts n'entrent qu'en 2023-24) — le bear-check "
+                                   "est aveugle au coeur d'un crash ; S2 est un phénomène "
+                                   "de rebond, pas de chute. Non résoluble par la largeur.",
+            "next": "CLOS DÉFINITIVEMENT (3 essais dépensés au registre). Réveil : uniquement "
+                    "une largeur d'AUTRE nature avec son propre prereg — cross-venue Bybit "
+                    "(≥2026-11) ou cadence Hyperliquid requalifiée.",
         },
         # Carte lake-vs-ledger du 2026-07-02/03 : les 2 derniers axes non-adjugés du
         # lake CoinGlass payé ont été testés dans la même nuit (pré-enregistrés,
@@ -739,12 +764,20 @@ def _restructuration_chat_block(s, edge_count: int, closed_count: int = 0) -> st
         f"re-test {r['metals_collect_now']['retest_deadline']} (couperet: {r['metals_collect_now']['kill_rule']}).\n"
         f"  - FX : {r['fx']['status']}, réouverture vérifiée {r['fx']['reopen_check']}.\n"
         + (
-            f"  - Test de LARGEUR S2 (élargir la règle funding gelée à 12 perps liquides, "
-            f"{bt.get('date')}) : verdict {bt.get('verdict')} — malgré "
-            f"+{bt.get('marginal_events_pct')}% d'événements marginaux et joint-null "
-            f"p={bt.get('joint_null_p_max5')}, le PREREG à zéro tolérance s'applique. "
-            f"Réserves : {', '.join(bt.get('reserves', []))}. Suite : {bt.get('next')}.\n"
-            if (bt := r.get("breadth_test")) else ""
+            f"  - Test de LARGEUR S2 (élargir la règle funding gelée à plus de perps — "
+            f"{bt.get('date')}) : {bt.get('verdict')}. Essai 1 (survivants) : "
+            f"+{e1.get('marginal_events_pct')}% d'événements marginaux, joint-null "
+            f"p={e1.get('joint_null_p_max5')}, mais {e1.get('echec')}. Essai 2 (durci, "
+            f"{e2.get('univers')}) : marginaux tombés à +{e2.get('marginal_events_pct')}% "
+            f"— {' ET '.join(e2.get('echecs', []))}. Le durcissement a MESURÉ le biais de "
+            f"survie et le confirme : edge {bs.get('edge_bps_par_evt')}, OOS-by-date "
+            f"{bs.get('oos_by_date')} — {bs.get('lecture')}. Réserve non résolue : "
+            f"{bt.get('reserve_non_resolue')} Suite : {bt.get('next')}\n"
+            if (bt := r.get("breadth_test"))
+            and (e1 := bt.get("essai_1_survivants", {}))
+            and (e2 := bt.get("essai_2_durci", {}))
+            and (bs := bt.get("biais_de_survie_MESURÉ", {}))
+            else ""
         )
         + (
             "  - Data lake CoinGlass (payé, inventorié 2026-07-02) : "
