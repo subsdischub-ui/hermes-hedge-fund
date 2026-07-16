@@ -230,3 +230,31 @@ def test_trm_checkpoint_loader_is_weights_only(tmp_path):
     torch.save({"model": {"w": torch.zeros(1)}, "exotic": os.system}, bad)
     with pytest.raises(pickle.UnpicklingError):
         load_trm_checkpoint(bad, "cpu")
+
+
+def test_trm_training_trigger_is_a_mechanism_not_a_promise():
+    """R3 (mécanisme, pas déclaration) : l'ordre opérateur « entraîne le TRM dès que
+    les 100 trades seront atteints » (2026-07-11) est CÂBLÉ — le statut se calcule
+    lui-même depuis le journal et bascule à DUE au seuil, il ne dépend d'aucune
+    mémoire d'agent ni d'une promesse dans un chat."""
+    from hermes.trm.verifier import trm_training_status
+
+    assert trm_training_status(closed_trades=8)["due"] is False
+    assert trm_training_status(closed_trades=99)["due"] is False
+    at = trm_training_status(closed_trades=100)
+    assert at["due"] is True and at["threshold"] == 100
+    assert "ENTRAÎNEMENT" in at["note"].upper()
+    # le statut porte toujours le compte réel, quel qu'il soit
+    assert trm_training_status(closed_trades=137)["closed_trades"] == 137
+
+
+@pytest.mark.asyncio
+async def test_dashboard_exposes_trm_training_trigger():
+    """Règle de visibilité : le déclencheur doit être lisible par l'opérateur au
+    dashboard (et donc racontable par le chat), pas enfoui dans le code."""
+    with TestClient(app) as c:
+        d = c.get("/dashboard/data").json()
+    t = d["trm_training"]
+    assert t["threshold"] == 100
+    assert isinstance(t["due"], bool)
+    assert isinstance(t["closed_trades"], int)

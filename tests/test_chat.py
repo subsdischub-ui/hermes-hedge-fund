@@ -150,3 +150,11 @@ def test_chat_returns_200_even_if_context_builder_raises(monkeypatch):
         assert r.status_code == 200
         sys_msg = _FakeRouter.last_messages[0]["content"]
         assert "état live indisponible" in sys_msg
+
+
+@pytest.mark.asyncio
+async def test_chat_context_carries_the_trm_training_trigger():
+    """Visibilité : l'agent doit pouvoir dire où en est le déclencheur d'entraînement
+    du TRM (ordre opérateur 2026-07-11), avec le compte réel et le seuil."""
+    ctx = await api._chat_context()
+    assert "TRM" in ctx and "/100" in ctx

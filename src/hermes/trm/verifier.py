@@ -186,6 +186,43 @@ def get_trm() -> TRMVerifier | NullTRMVerifier:
         return NullTRMVerifier()
 
 
+# Operator order 2026-07-11: "entraîne le TRM dès que les 100 trades seront
+# atteints". A promise in a chat log is not a guarantee (R3: a behavioural
+# guarantee exists only if a MECHANISM enforces it) — so the condition is
+# COMPUTED here from the journal and surfaced on the dashboard/chat the day it
+# flips, instead of depending on any agent remembering it.
+TRM_TRAINING_MIN_CLOSED_TRADES = 100
+
+
+def trm_training_status(closed_trades: int) -> dict:
+    """Is TRM training due? Pure function of the journal's closed-trade count.
+
+    Why 100: TRM learns from LABELLED OUTCOMES (a trade + how it actually ended).
+    Training on the backtest events instead would be circular — the model would
+    memorise the very data the strategies were built on and then "validate" their
+    noise. 8 closed trades (state at the 2026-07-11 freeze) is not a dataset;
+    100 is the ratified floor to re-evaluate. Paper trades count: they are real
+    executions with real outcomes, only the money is simulated.
+    """
+    due = closed_trades >= TRM_TRAINING_MIN_CLOSED_TRADES
+    note = (
+        "ENTRAÎNEMENT DÛ — seuil opérateur atteint (2026-07-11) : lancer la "
+        "ré-évaluation du TRM sur les trades clos étiquetés."
+        if due
+        else (
+            f"gelé — {TRM_TRAINING_MIN_CLOSED_TRADES - closed_trades} trades clos "
+            "manquants avant la ré-évaluation ratifiée (entraîner sur moins serait "
+            "du bruit ; sur le backtest, circulaire)."
+        )
+    )
+    return {
+        "due": due,
+        "closed_trades": int(closed_trades),
+        "threshold": TRM_TRAINING_MIN_CLOSED_TRADES,
+        "note": note,
+    }
+
+
 def trm_status_summary() -> str:
     """Lightweight, dashboard-facing TRM status string.
 

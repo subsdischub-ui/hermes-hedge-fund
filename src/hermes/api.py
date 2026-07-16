@@ -217,6 +217,7 @@ async def dashboard_data() -> dict[str, Any]:
         "governance": _governance_status(),
         "restructuration": _restructuration_status(s, edge_count),
         "trm_status": _trm_status_safe(),
+        "trm_training": _trm_training_safe(stats.get("count", 0)),
         "protections": await _protections_status(s, equity),
         "server_time": datetime.now(UTC).isoformat(),
     }
@@ -285,6 +286,19 @@ def _forward_status(s) -> dict[str, dict]:
                 }
         out[flux] = entry
     return out
+
+
+def _trm_training_safe(closed_trades: int) -> dict:
+    """Fail-soft wrapper around trm.verifier.trm_training_status — the operator's
+    "train at 100 trades" order made mechanical (computed from the journal each
+    request), never a remembered promise. A helper bug must not break telemetry."""
+    try:
+        from hermes.trm.verifier import trm_training_status
+
+        return trm_training_status(int(closed_trades))
+    except Exception as e:  # pragma: no cover - defensive
+        return {"due": False, "closed_trades": int(closed_trades), "threshold": 100,
+                "note": f"statut indisponible: {e}"}
 
 
 def _trm_status_safe() -> str:
@@ -678,11 +692,11 @@ async def _chat_context() -> str:
         f"- Stratégies:\n{strat}\n"
         f"- Positions ouvertes: {pos}\n"
         f"- Ce que chaque sleeve voit maintenant:\n{chr(10).join(gauges) or '  (pas de pulse récent)'}\n"
-        f"{_restructuration_chat_block(s, edge_count)}"
+        f"{_restructuration_chat_block(s, edge_count, stats.get('count', 0))}"
     )
 
 
-def _restructuration_chat_block(s, edge_count: int) -> str:
+def _restructuration_chat_block(s, edge_count: int, closed_count: int = 0) -> str:
     """Compact restructuration + collecte forward block for the chat context — same
     facts as /dashboard/data's `restructuration`/`forward` blocks, condensed to key
     numbers only (token budget). Lets the agent answer 'quel est ton slate et
@@ -753,7 +767,13 @@ def _restructuration_chat_block(s, edge_count: int) -> str:
             "restants avant tout passage réel : blackout macro FOMC/CPI, circuit-breaker "
             "multi-jours, jambe spot carry réelle, statut TRM.\n"
         )
-        + f"  - Couperet global du narratif « revenu par trading » : {r['global_cutoff']}."
+        + f"  - Couperet global du narratif « revenu par trading » : {r['global_cutoff']}.\n"
+        + (
+            f"  - TRM : {tt['note']} ({tt['closed_trades']}/{tt['threshold']} trades clos ; "
+            f"ordre opérateur 2026-07-11 « entraîner dès 100 trades » — câblé, pas promis : "
+            f"le statut se calcule à chaque requête et bascule seul au seuil)."
+            if (tt := _trm_training_safe(closed_count)) else ""
+        )
     )
 
 
