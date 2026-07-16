@@ -20,6 +20,18 @@ from hermes.settings import get_settings
 
 log = get_logger(__name__)
 
+# La règle validée vit sur les clôtures 4h UTC de Binance (00/04/08/12/16/20).
+# Le tick DOIT donc être ancré UTC, pas en HERMES_TZ : avec le cron applicatif
+# "0 */4" en Europe/Paris (UTC+2), la prod a tiré à H+2 de chaque barre pendant
+# 3 semaines — décision systématique sur une demi-barre jamais backtestée
+# (audit 2026-07-16). Minute 1 : marge de consolidation de la clôture côté venue.
+_MARKET_TICK_SPEC = "1 0,4,8,12,16,20 * * *"
+
+
+def market_tick_trigger(spec: str = _MARKET_TICK_SPEC) -> CronTrigger:
+    """Trigger du market_tick, ancré UTC quel que soit HERMES_TZ (DST-immune)."""
+    return CronTrigger.from_crontab(spec, timezone="UTC")
+
 
 def build_scheduler() -> AsyncIOScheduler:
     s = get_settings()
@@ -78,7 +90,8 @@ def build_scheduler() -> AsyncIOScheduler:
 
     sched.add_job(
         market_tick,
-        CronTrigger.from_crontab(loops.get("market_tick", "*/5 * * * *"), timezone=s.tz),
+        # UTC ancré aux clôtures 4h Binance — jamais s.tz ici (voir market_tick_trigger).
+        market_tick_trigger(loops.get("market_tick", _MARKET_TICK_SPEC)),
         id="market_tick",
         max_instances=1,
         coalesce=True,

@@ -49,6 +49,20 @@ def pulse_entry(
             gauges.append({"sleeve": "Momentum #1", "metric": "conviction",
                            "val": v, "thr": 1.0, "armed": False, "retired": True,
                            "status": "retired (hors slate depuis 2026-07-02)"})
+        elif s.skill_id == "mean_reversion_regime":
+            # Jauge ajoutée le 2026-07-16 : la moitié du slate live n'avait AUCUNE
+            # jauge — invisible au dashboard/chat (violation de la règle opérateur
+            # de visibilité) et le « pourquoi n'arme-t-elle pas ? » était une boîte
+            # noire pendant l'audit du non-tir. RSI(2) est le déclencheur le plus
+            # lisible (BUY < 10, SELL > 90, en range et du bon côté de la MA200) ;
+            # %B accompagne pour le diagnostic.
+            r2 = round(float(s.features.get("rsi2", 50.0)), 1)
+            pb = round(float(s.features.get("pct_b", 0.5)), 2)
+            armed = s.side in ("BUY", "SELL")
+            gauges.append({"sleeve": "Mean reversion #1", "metric": "RSI(2)",
+                           "val": r2, "thr": 10.0, "armed": armed,
+                           "pct_b": pb, "side": s.side if armed else "",
+                           "status": f"range-gated ; arme si RSI2<10 ou >90 ; %B={pb}"})
         elif s.skill_id == "funding_squeeze_continuation":
             fz = round(float(s.features.get("funding_z", 0.0)), 2)
             gauges.append({"sleeve": "Funding #2", "metric": "funding z",

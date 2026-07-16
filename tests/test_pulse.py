@@ -78,3 +78,31 @@ def test_pulse_entry_momentum_gauge_is_flagged_retired_and_never_armed():
     assert g["Momentum #1"]["retired"] is True
     # And it can never win would_act even though CFG still lists it in allowed_skills
     # for this unit test's fixture — the real live config no longer does.
+
+
+def _mr_sig(side, conf, rsi2, pct_b):
+    return SkillSignal(
+        "mean_reversion_regime", side, conf, 0.02, 0.04,
+        f"regime=range rsi2={rsi2}", {"rsi2": rsi2, "pct_b": pct_b},
+    )
+
+
+def test_pulse_entry_has_mean_reversion_gauge_even_on_hold():
+    # Leçon 2026-07-16 : la moitié du slate live (mean_reversion_regime) n'avait
+    # AUCUNE jauge au pulse — invisible au dashboard et au chat, en violation de
+    # la règle opérateur « tout ce qui est shippé doit être visible et racontable ».
+    sigs = [_mr_sig("HOLD", 0.0, 55.0, 0.5)]
+    e = pulse_entry("BTC/USDC", {"regime": "range", "efficiency_ratio": 0.1}, sigs, set(), CFG)
+    g = [x for x in e["gauges"] if x.get("sleeve") == "Mean reversion #1"]
+    assert g, "le sleeve mean-reversion doit avoir une jauge même en HOLD"
+    assert g[0]["armed"] is False
+    assert g[0]["val"] == 55.0
+    assert g[0]["pct_b"] == 0.5
+
+
+def test_pulse_entry_mean_reversion_gauge_armed_on_signal():
+    sigs = [_mr_sig("BUY", 0.6, 6.0, 0.05)]
+    e = pulse_entry("ARB/USDC", {"regime": "range", "efficiency_ratio": 0.1}, sigs, set(), CFG)
+    g = [x for x in e["gauges"] if x.get("sleeve") == "Mean reversion #1"]
+    assert g and g[0]["armed"] is True
+    assert g[0]["side"] == "BUY"

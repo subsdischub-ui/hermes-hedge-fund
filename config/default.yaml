@@ -196,7 +196,13 @@ loops:
   # + fees) and could not keep up with a ~270s tick × 3 symbols. Hourly removes the
   # overtrading and leaves ample headroom. Stop protection still runs every 30s
   # (stop_watcher), so risk control is unaffected by the slower decision loop.
-  market_tick:      "0 */4 * * *"        # main decision loop, every 4h (aligned to 4h bars)
+  # market_tick est exécuté en UTC (forcé dans scheduler.market_tick_trigger, jamais
+  # en HERMES_TZ) et ancré aux CLÔTURES des barres 4h Binance 00/04/08/12/16/20 UTC,
+  # minute 1 (marge de consolidation). Leçon 2026-07-16 : l'ancien "0 */4" interprété
+  # en tz applicative (UTC+2) tirait à H+2 de chaque barre — décision sur une
+  # demi-barre jamais backtestée, setups mean-reversion de clôture ratés.
+  market_tick:      "1 0,4,8,12,16,20 * * *"   # main decision loop — 4h UTC bar closes
+
   pulse:            "0 * * * *"           # hourly LLM-free signal/regime snapshot -> activity feed
   per_trade_close:  "event"
   nightly_reflect:  "0 23 * * *"

@@ -22,7 +22,13 @@ class MarketData:
     async def close(self) -> None:
         await self.client.close()
 
-    async def ohlcv(self, symbol: str, timeframe: str = "1h", limit: int = 200) -> pd.DataFrame:
+    async def ohlcv(
+        self,
+        symbol: str,
+        timeframe: str = "1h",
+        limit: int = 200,
+        closed_only: bool = True,
+    ) -> pd.DataFrame:
         # NOTE: CCXT's fetch_ohlcv normalises every venue to the 6 OHLCV fields
         # only. The per-bar microstructure that Strategy #2 needs — quote_asset_volume,
         # num_trades, taker_buy_base, taker_buy_quote (canonical names defined in
@@ -35,6 +41,17 @@ class MarketData:
         # SAME canonical snake_case names as the backtest (history._MICRO_SOURCE) so
         # the HF backtest and live feeds stay column-compatible.
         rows = await self.client.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        # closed_only: CCXT returns the STILL-FORMING bar last; every strategy rule
+        # here was validated on CLOSED bars, and skills read .iloc[-1]. Keeping the
+        # forming bar makes the live agent trade a half-bar variant that was never
+        # backtested (audited 2026-07-16: the tick fired at H+2 of the 4h cycle and
+        # mean-reversion setups present at close had already un-armed intra-bar —
+        # adverse selection for a reversion rule). Callers that genuinely need the
+        # forming bar (none today) must ask for it explicitly.
+        if closed_only and rows:
+            tf_ms = int(self.client.parse_timeframe(timeframe)) * 1000
+            if int(rows[-1][0]) + tf_ms > int(pd.Timestamp.now(tz="UTC").timestamp() * 1000):
+                rows = rows[:-1]
         df = pd.DataFrame(rows, columns=["ts", "open", "high", "low", "close", "volume"])
         df["ts"] = pd.to_datetime(df["ts"], unit="ms", utc=True)
         return df
