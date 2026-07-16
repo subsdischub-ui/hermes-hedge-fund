@@ -965,10 +965,15 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "threshold, hold 2 bars, entry lag 1, 15bps RT taker cost. Appendix ARB/SUI/WIF non-decisive.",
         "Date-level de-overlapped basket (4 decisive symbols, event_basket_gate, no_overlap=True) fails "
         "BOTH binding criteria simultaneously: MC random-entry null p in [0.1155, 0.1415] across 5 seeds "
-        "(all >= 0.05) AND OOS-by-date Sharpe = -0.1472 (<=0) across all 5 seeds. DSR against the "
-        "post-bump crypto-book trial count (N=1909) collapses to ~2.5e-05. Not a momentum-redux (max "
-        "|rho| z-vs-momentum30d = 0.337 < 0.7) and orthogonal to S2 funding_squeeze (weekly rho=-0.096 "
-        "< 0.30) — a genuine null result, not a redux or a duplicate of an existing pillar.",
+        "(all >= 0.05, stable but wrong side of the bar) AND OOS-by-date Sharpe = -0.1472 (<=0) across "
+        "all 5 seeds. DSR against the post-bump crypto-book trial count (N=1909) collapses to ~2.5e-05 "
+        "(PSR vs zero itself only 0.52, i.e. coin-flip). Not a momentum-redux (max |rho| z-vs-momentum30d "
+        "= 0.337, BTC, well under the 0.7 kill line) and orthogonal to S2 funding_squeeze on a weekly "
+        "grid (rho=-0.096, well under 0.30) — so this is a genuine null result, not a redux or a "
+        "duplicate of an existing pillar. 2022 bear coverage is technically non-zero (events exist on "
+        "all 4 decisive symbols) but structurally thin on BTC/SOL (n=1 each), consistent with the retail "
+        "ratio rarely reaching |z|>=2 during a generalized panic where the crowd is already uniformly "
+        "short.",
         "basket mc_p >= 0.05 (5 seeds, 0.1155-0.1415) AND OOS-by-date <= 0 (-0.1472, 5 seeds); "
         "DSR vs N=1909 ~= 2.5e-05",
         "A genuinely new data axis (e.g., cross-venue global-LSR divergence, or a sub-daily cadence with "
@@ -997,6 +1002,45 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "par ce PREREG, pas un revive_condition -- necessiterait son PROPRE pre-enregistrement independant, "
         "pas une reouverture de cette entree).",
         tags=("taker perp imbalance continuation", "perp taker flow prereg", "coinglass taker volume perp", "aggressive flow continuation extreme z",),
+    ),
+    # Les deux entrées suivantes MÉCANISENT des verdicts qui ne vivaient qu'en prose
+    # (docs/RESTRUCTURATION_2026-07.md §2 et research_fx/LAB_JOURNAL.md) — trou R3 relevé
+    # par l'audit adversarial du 2026-07-16 : sans entrée ledger, rien n'empêchait un
+    # futur agent de re-proposer ces familles comme neuves. Verdicts déjà comptés au
+    # registre (aucun bump ici).
+    DeadEnd(
+        "Equity perps / tokenized-stock perps as a funding axis (SPX/TSLA/NVDA/COIN/MSTR)", "crypto",
+        "2026-07-02 (restructuration §2; mécanisé au ledger 2026-07-16)",
+        "Porter la règle funding-squeeze GELÉE (z>=2, fenêtre 180) sur les perps equity-linked "
+        "de type Binance : SPXUSDT (indice), TSLA/NVDA (single-stock), COIN/MSTR (proxies crypto).",
+        "Le canal funding est structurellement cassé sur chaque candidat : SPXUSDT = floor "
+        "administratif (+0,5 bps identique sur 88,5 % des points — un z-score n'y lit aucune "
+        "information) ; TSLA/NVDA impriment funding = 0 EXACT chaque week-end (marché sous-jacent "
+        "fermé, qu'un z-score lit à tort comme « neutre ») ; COIN/MSTR = paris bitcoin déguisés "
+        "(rho 90 j vs BTC 0,71-0,78), zéro pari nouveau vs le livre crypto existant.",
+        "SPX floor 88.5% points identiques; TSLA/NVDA funding=0 exact les week-ends; COIN/MSTR rho90j vs BTC 0.71-0.78",
+        "Un venue equity-perp dont le funding est fixé par le marché 24/7 (ni floor administratif "
+        "ni convention week-end-zéro), ou un instrument equity-linked à rho vs BTC < 0.3.",
+        tags=("equity perps funding", "equity perp funding", "tokenized stocks", "tokenized stock",
+              "tokenized stock perps", "stock perps", "spx perp", "spx perp funding",
+              "single-stock perps", "tsla nvda funding", "coin mstr proxy", "stock perps funding"),
+    ),
+    DeadEnd(
+        "FX London-session channel breakout (tier-2 survivor)", "fx_metals",
+        "2026-06-24 (tier-2 FX); re-exécuté à l'identique 2026-07-16",
+        "Breakout de canal 1h N40 à l'ouverture de Londres, hold H12, sur USDCHF/USDJPY/EURJPY "
+        "(le dernier survivant tier-2 de la campagne breakout FX).",
+        "SURVIVOR REFUTED, reproduit bit-à-bit à la ré-exécution : bat le MC random-entry null sur "
+        "0/3 actifs (exigé >= 2) ; l'analyse death-cost le tue — death cost min 4,87 bps vs coût "
+        "stressé 2x de 3,20-4,20 bps, l'edge meurt DANS la fourchette réaliste spread+slippage FX. "
+        "Confirme sur FX le verdict crypto (#15/#24) : les familles breakout OHLCV single-asset "
+        "meurent net de coût honnête = whipsaw.",
+        "MC-null 0/3 (exigé >=2); death cost min 4.87 bps vs stress 3.20-4.20 bps; look-ahead clean",
+        "Une définition de breakout sur un canal NON-OHLCV (order-flow, options), ou une exécution "
+        "mesurée à coût maker réel sur un venue où le spread FX < 1 bp.",
+        tags=("fx breakout", "london breakout", "london session", "session breakout",
+              "london session breakout", "session breakout fx", "fx channel breakout",
+              "channel breakout", "london open", "breakout london open"),
     ),
 ]
 

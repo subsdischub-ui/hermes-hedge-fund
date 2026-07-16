@@ -9,11 +9,11 @@
     "revive_condition": "A non-price trend confirmation on an independent channel that de-betas gold's secular drift, or a trend test on an instrument without a 25y secular uptrend.",
     "tags": [
       "gold trend",
+      "gold trend following",
       "trend following gold",
       "tsmom gold",
       "gold tsmom",
-      "gold momentum",
-      "gold trend following"
+      "gold momentum"
     ]
   },
   {
@@ -199,10 +199,10 @@
       "feature zoo",
       "ml combination",
       "feature-zoo",
+      "feature-zoo combination",
       "gbm logit gold",
       "ml feature zoo",
-      "d1 feature zoo",
-      "feature-zoo combination"
+      "d1 feature zoo"
     ]
   },
   {
@@ -344,10 +344,10 @@
     "revive_condition": "Real coinglass_liquidation history (≥2019, size/cluster) with STRICT bull/bear separation (the authorised re-test). If it again survives only in the bull leg → dead again.",
     "tags": [
       "liquidation cascade",
+      "liquidation cascade reversion",
       "liquidation flush",
       "forced liquidation reversion",
-      "liquidation rebound",
-      "liquidation cascade reversion"
+      "liquidation rebound"
     ]
   },
   {
@@ -443,10 +443,10 @@
     "revive_condition": "A lake with 4h history for the wider universe (the validated cadence), or a new instrument that passes on its own distinct channel. Never lower z to force a pass.",
     "tags": [
       "funding_squeeze on 1d",
+      "funding_squeeze on 1d bars",
       "funding squeeze 1d",
       "universe expansion funding",
-      "1d universe",
-      "funding_squeeze on 1d bars"
+      "1d universe"
     ]
   },
   {
@@ -493,9 +493,9 @@
       "central-bank tone",
       "hawk dove drift",
       "tone drift",
+      "hawk/dove",
       "llm tone",
-      "fed tone drift",
-      "hawk/dove"
+      "fed tone drift"
     ]
   },
   {
@@ -524,12 +524,12 @@
     "revive_condition": "A funding signal whose forward sign is STABLE (not mean-reverting) and that survives the ~100%/day two-leg cost — e.g. a slow, low-turnover funding state, NOT a daily XS reshuffle.",
     "tags": [
       "cross-sectional funding",
+      "cross-sectional funding continuation",
       "funding cross-sectional",
       "funding-xs",
       "xs funding",
       "funding cross sectional",
-      "cross sectional funding",
-      "cross-sectional funding continuation"
+      "cross sectional funding"
     ]
   },
   {
@@ -560,9 +560,9 @@
       "oi growth",
       "oi-growth",
       "open-interest growth",
+      "open-interest growth cross-sectional",
       "open interest growth",
-      "oi growth xs",
-      "open-interest growth cross-sectional"
+      "oi growth xs"
     ]
   },
   {
@@ -611,6 +611,50 @@
       "perp taker flow prereg",
       "coinglass taker volume perp",
       "aggressive flow continuation extreme z"
+    ]
+  },
+  {
+    "name": "Equity perps / tokenized-stock perps as a funding axis (SPX/TSLA/NVDA/COIN/MSTR)",
+    "book": "crypto",
+    "date": "2026-07-02 (restructuration §2; mécanisé au ledger 2026-07-16)",
+    "what_tested": "Porter la règle funding-squeeze GELÉE (z>=2, fenêtre 180) sur les perps equity-linked de type Binance : SPXUSDT (indice), TSLA/NVDA (single-stock), COIN/MSTR (proxies crypto).",
+    "why_dead": "Le canal funding est structurellement cassé sur chaque candidat : SPXUSDT = floor administratif (+0,5 bps identique sur 88,5 % des points — un z-score n'y lit aucune information) ; TSLA/NVDA impriment funding = 0 EXACT chaque week-end (marché sous-jacent fermé, qu'un z-score lit à tort comme « neutre ») ; COIN/MSTR = paris bitcoin déguisés (rho 90 j vs BTC 0,71-0,78), zéro pari nouveau vs le livre crypto existant.",
+    "kill_metric": "SPX floor 88.5% points identiques; TSLA/NVDA funding=0 exact les week-ends; COIN/MSTR rho90j vs BTC 0.71-0.78",
+    "revive_condition": "Un venue equity-perp dont le funding est fixé par le marché 24/7 (ni floor administratif ni convention week-end-zéro), ou un instrument equity-linked à rho vs BTC < 0.3.",
+    "tags": [
+      "equity perps funding",
+      "equity perp funding",
+      "tokenized stocks",
+      "tokenized stock",
+      "tokenized stock perps",
+      "stock perps",
+      "spx perp",
+      "spx perp funding",
+      "single-stock perps",
+      "tsla nvda funding",
+      "coin mstr proxy",
+      "stock perps funding"
+    ]
+  },
+  {
+    "name": "FX London-session channel breakout (tier-2 survivor)",
+    "book": "fx_metals",
+    "date": "2026-06-24 (tier-2 FX); re-exécuté à l'identique 2026-07-16",
+    "what_tested": "Breakout de canal 1h N40 à l'ouverture de Londres, hold H12, sur USDCHF/USDJPY/EURJPY (le dernier survivant tier-2 de la campagne breakout FX).",
+    "why_dead": "SURVIVOR REFUTED, reproduit bit-à-bit à la ré-exécution : bat le MC random-entry null sur 0/3 actifs (exigé >= 2) ; l'analyse death-cost le tue — death cost min 4,87 bps vs coût stressé 2x de 3,20-4,20 bps, l'edge meurt DANS la fourchette réaliste spread+slippage FX. Confirme sur FX le verdict crypto (#15/#24) : les familles breakout OHLCV single-asset meurent net de coût honnête = whipsaw.",
+    "kill_metric": "MC-null 0/3 (exigé >=2); death cost min 4.87 bps vs stress 3.20-4.20 bps; look-ahead clean",
+    "revive_condition": "Une définition de breakout sur un canal NON-OHLCV (order-flow, options), ou une exécution mesurée à coût maker réel sur un venue où le spread FX < 1 bp.",
+    "tags": [
+      "fx breakout",
+      "london breakout",
+      "london session",
+      "session breakout",
+      "london session breakout",
+      "session breakout fx",
+      "fx channel breakout",
+      "channel breakout",
+      "london open",
+      "breakout london open"
     ]
   }
 ]
