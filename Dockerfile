@@ -51,6 +51,13 @@ COPY --from=builder --chown=hermes:hermes /opt/venv /opt/venv
 COPY --from=builder --chown=hermes:hermes /opt/trm  /opt/trm
 COPY --chown=hermes:hermes src ./src
 COPY --chown=hermes:hermes config ./config
+# governance/ = l'état canonique COMMITTÉ (registre d'essais = la barre de déflation,
+# ledger des morts = l'anti-re-dépense). Il était absent de l'image jusqu'au
+# 2026-07-16 : le conteneur retombait sur un /app/governance inexistant que
+# seed_defaults() recréait à 1892 à chaque boot, pendant que le repo comptait 1911.
+# Un dashboard qui affiche un compte d'essais faux ment à l'opérateur. Gardé par
+# tests/test_docker_ships_runtime_state.py (un COPY oublié est invisible en local).
+COPY --chown=hermes:hermes governance ./governance
 
 RUN mkdir -p /data /data/trm /data/chroma && chown -R hermes:hermes /data
 USER hermes
