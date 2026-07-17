@@ -639,6 +639,14 @@ class DeadEnd:
     kill_metric: str
     revive_condition: str
     tags: tuple[str, ...] = ()
+    # Tags assez SPÉCIFIQUES pour bloquer SEULS (2026-07-16). La règle précédente utilisait
+    # la LONGUEUR d'un tag comme proxy de sa spécificité — c'est faux, et cette entrée en
+    # portait la preuve : `donchian` (1 mot, ultra-spécifique) et `short-horizon
+    # continuation` (2 mots, générique — le coupable du faux blocage de 2026-07-03) y
+    # étaient traités à l'identique, aucun ne pouvant mordre seul. Résultat mesuré :
+    # 8 familles notoirement mortes sur 11 passaient le gate. La décisivité est donc
+    # DÉCLARÉE ici, tag par tag. Un tag générique reste dans `tags` (règle des >=2).
+    decisive_tags: tuple[str, ...] = ()
 
     def as_dict(self) -> dict:
         return {
@@ -650,6 +658,7 @@ class DeadEnd:
             "kill_metric": self.kill_metric,
             "revive_condition": self.revive_condition,
             "tags": list(self.tags),
+            "decisive_tags": list(self.decisive_tags),
         }
 
 
@@ -811,6 +820,10 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "Not the cadence — a genuinely new NON-OHLCV exogenous data axis.",
         tags=("vol-scaled momentum", "breakout vol expansion", "donchian", "intraday mean reversion",
               "short-horizon continuation", "fast ohlcv", "ohlcv momentum"),
+        decisive_tags=("donchian", "trend following", "trend-following", "tsmom",
+                       "time series momentum", "ma crossover", "moving average crossover",
+                       "vol-scaled momentum", "ohlcv momentum", "fast ohlcv",
+                       "breakout vol expansion", "intraday mean reversion", "momentum"),
     ),
     DeadEnd(
         "Cointegration / pairs (incl. gold-silver)", "fx_metals", "inherited / re-confirmed 2026-06-24",
@@ -832,6 +845,8 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "order imbalance), not a calendar-clock anomaly.",
         tags=("session time of day", "time-of-day", "intraday tod", "hour of day fx", "london open",
               "intraday_tod"),
+        decisive_tags=("time-of-day", "time of day", "intraday tod", "intraday_tod",
+                       "hour of day", "session seasonality"),
     ),
     DeadEnd(
         "Cross-sectional momentum & temporal lead-lag", "cross", "inherited / re-confirmed 2026-06-24",
@@ -852,6 +867,8 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "Real intraday CME FUTURES tape / order-flow / CVD (paywalled) — a different axis from the "
         "dead SPOT taker-buy volume.",
         tags=("ofi", "cvd", "trade-flow microstructure", "taker buy volume", "order flow imbalance spot"),
+        decisive_tags=("ofi", "cvd", "order flow imbalance", "trade-flow microstructure",
+                       "cumulative volume delta"),
     ),
     DeadEnd(
         "Maker-execution free lunch", "structural", "inherited / re-confirmed 2026-06-24",
@@ -862,6 +879,8 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "A venue/microstructure where queue position is informative without adverse selection (a "
         "verified rebate on uninformed flow).",
         tags=("maker execution", "maker free lunch", "maker rebate", "passive maker fill"),
+        decisive_tags=("maker execution", "maker free lunch", "maker rebate",
+                       "passive maker fill"),
     ),
     DeadEnd(
         "H2 funding term-structure (literal term-spread)", "crypto", "from STREAM_02",
@@ -872,6 +891,8 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "Cross-venue FUNDING DISPERSION + OI-acceleration at constant funding (multi-venue "
         "crowding) — NOT the simple term-spread.",
         tags=("funding term structure", "funding term-spread", "funding term spread"),
+        decisive_tags=("funding term structure", "funding term-spread",
+                       "funding term spread"),
     ),
     DeadEnd(
         "H5 liquidation-cascade reversion (OHLCV proxy)", "crypto", "from STREAM_02",
@@ -901,6 +922,7 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         "flagged dead; book rebuilt from confirmed/orthogonal sleeves only",
         "Not revivable as-is; would require a genuinely new orthogonal data axis via a fresh sleeve.",
         tags=("breakout_vol_expansion", "pairs_eth_btc", "intraday_tod_btc", "dead slate", "legacy slate"),
+        decisive_tags=("breakout_vol_expansion", "pairs_eth_btc", "intraday_tod_btc"),
     ),
     DeadEnd(
         "Pre-vetted-dead frontiers (pinning, skew, straddle, WMR fix, swap-free carry, GP search)",
@@ -1123,6 +1145,8 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
         tags=("fx breakout", "london breakout", "london session", "session breakout",
               "london session breakout", "session breakout fx", "fx channel breakout",
               "channel breakout", "london open", "breakout london open"),
+        decisive_tags=("channel breakout", "fx channel breakout", "london breakout",
+                       "london session breakout", "session breakout"),
     ),
     DeadEnd(
         "S2 funding-squeeze BREADTH (universe expansion beyond the validated basket)", "crypto",
@@ -1195,6 +1219,7 @@ class DeadEndsLedger:
                 what_tested=e.get("what_tested", ""), why_dead=e.get("why_dead", ""),
                 kill_metric=e.get("kill_metric", ""), revive_condition=e.get("revive_condition", ""),
                 tags=tuple(e.get("tags", ())),
+                decisive_tags=tuple(e.get("decisive_tags", ())),
             )
             for e in raw
         ]
@@ -1204,15 +1229,29 @@ class DeadEndsLedger:
         return list(self._entries)
 
     def _match(self, proposal: str) -> DeadEnd | None:
-        """Hardened matching (2026-07-03, incident research_toplsr/JOURNAL_taker.md).
+        """Matching par SPÉCIFICITÉ DÉCLARÉE (2026-07-16), après deux incidents opposés.
 
-        The original single-substring rule false-BLOCKED a disjoint-axis proposal that
-        merely contained one generic tag phrase ("short-horizon continuation"). An entry
-        now matches only when the evidence is strong: the entry NAME appears verbatim,
-        OR >=2 distinct tags hit, OR one ultra-specific tag (>=4 words) hits. Tags match
-        on word boundaries so short tags ("ofi", "cot") can never fire inside words
-        ("profit", "apricot"). Loosening a real block requires editing the entry — the
-        verdict semantics (BLOCKED / ALLOWED-NEW-AXIS / NOT-A-DEAD-END) are unchanged.
+        Histoire, qui gouverne la conception :
+        - 2026-07-03 — FAUX BLOCAGE : la règle originale (une sous-chaîne suffit) a bloqué
+          une proposition d'axe DISJOINT contenant juste la phrase générique
+          « short-horizon continuation ». Durcissement d'alors : frontières de mots +
+          « nom verbatim OU >=2 tags OU un tag >=4 mots ».
+        - 2026-07-16 — 8 FAUX PASS sur 11 (mesuré) : ce durcissement a sur-corrigé.
+          `donchian breakout on 4h klines`, `momentum`, `trend following`,
+          `CVD order flow imbalance`, `funding term structure`, `maker execution free lunch`,
+          `channel breakout`, `intraday time of day seasonality` passaient tous le gate.
+
+        Le défaut était d'utiliser la LONGUEUR d'un tag comme proxy de sa SPÉCIFICITÉ.
+        La décisivité est désormais DÉCLARÉE (``DeadEnd.decisive_tags``) : un tag décisif
+        bloque seul ; un tag générique reste corroborant (règle des >=2 inchangée), ce qui
+        préserve le correctif de 2026-07-03. Les frontières de mots restent la garde contre
+        les sous-chaînes (``ofi`` ne peut pas mordre dans ``profit``) — c'est elle, et non
+        la règle des >=2, qui traitait ce risque-là.
+
+        Asymétrie des coûts qui tranche les cas douteux : un faux BLOCAGE est RÉCUPÉRABLE
+        (``new_data_axis`` rend ALLOWED-NEW-AXIS, ou on édite l'entrée) ; un faux PASS coûte
+        un essai dépensé, et au pire une famille morte re-déployée. À doute égal : bloquer.
+        Sémantique des verdicts inchangée.
         """
         def _found(needle: str, haystack: str) -> bool:
             return bool(re.search(r"(?<!\w)" + re.escape(needle) + r"(?!\w)", haystack))
@@ -1221,6 +1260,8 @@ class DeadEndsLedger:
         for entry in self._entries:
             name = entry.name.lower().strip()
             if name and _found(name, text):
+                return entry
+            if any(_found(t.lower().strip(), text) for t in entry.decisive_tags if t):
                 return entry
             hits = [t for t in {tag.lower().strip() for tag in entry.tags if tag}
                     if _found(t, text)]

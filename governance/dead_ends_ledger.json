@@ -14,7 +14,8 @@
       "tsmom gold",
       "gold tsmom",
       "gold momentum"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "B1 COT positioning-extreme contrarian",
@@ -30,7 +31,8 @@
       "cot extreme",
       "commitment of traders",
       "cot net"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "B2 real-rate (DFII10) shock → gold",
@@ -46,7 +48,8 @@
       "real rate",
       "tips yield",
       "realrate"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "B3 GVZ gold implied-vol reversion",
@@ -61,7 +64,8 @@
       "gold implied vol",
       "gold vrp",
       "gold vol reversion"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "B5 GLD ETF-flow divergence (directional)",
@@ -77,7 +81,8 @@
       "etf flow",
       "gold etf flow",
       "ounces in trust"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "B4 ForexFactory economic-surprise index",
@@ -93,7 +98,8 @@
       "economic surprise",
       "macro surprise",
       "actual vs forecast"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "E1 COMEX physical inventory",
@@ -108,7 +114,8 @@
       "comex warehouse",
       "registered eligible",
       "physical inventory"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "E2 WTI term-structure roll-yield → CAD/AUD",
@@ -124,7 +131,8 @@
       "crude roll",
       "term structure roll",
       "roll yield"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "E3 FOMC tone-change at the print",
@@ -140,7 +148,8 @@
       "fomc print",
       "tone surprise at print",
       "hawk dove print"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "X1 crypto-fear → safe-haven (one-brain crossing)",
@@ -155,7 +164,8 @@
       "dvol safe haven",
       "crypto haven",
       "crypto to fx lead"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "X2 stablecoin dry-powder → risk-on FX (one-brain crossing)",
@@ -170,7 +180,8 @@
       "stablecoin dry powder fx",
       "dry powder risk on",
       "stablecoin to fx"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "X3 conditioning / interactions (signal × regime)",
@@ -185,7 +196,8 @@
       "signal x regime",
       "interaction regime gate",
       "regime conditioning gold"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "D1 ML feature-zoo combination (GBM/LogReg over 8 features)",
@@ -203,7 +215,8 @@
       "gbm logit gold",
       "ml feature zoo",
       "d1 feature zoo"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Combined FX book-of-4 under MC-null-first hierarchy",
@@ -218,7 +231,8 @@
       "book of four",
       "diversification mirage",
       "loo on noise"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Fast/any-cadence single-asset OHLCV families",
@@ -236,6 +250,21 @@
       "short-horizon continuation",
       "fast ohlcv",
       "ohlcv momentum"
+    ],
+    "decisive_tags": [
+      "donchian",
+      "trend following",
+      "trend-following",
+      "tsmom",
+      "time series momentum",
+      "ma crossover",
+      "moving average crossover",
+      "vol-scaled momentum",
+      "ohlcv momentum",
+      "fast ohlcv",
+      "breakout vol expansion",
+      "intraday mean reversion",
+      "momentum"
     ]
   },
   {
@@ -253,7 +282,8 @@
       "gold silver pair",
       "eth btc pair",
       "pairs_eth_btc"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Session / time-of-day on FX",
@@ -270,6 +300,14 @@
       "hour of day fx",
       "london open",
       "intraday_tod"
+    ],
+    "decisive_tags": [
+      "time-of-day",
+      "time of day",
+      "intraday tod",
+      "intraday_tod",
+      "hour of day",
+      "session seasonality"
     ]
   },
   {
@@ -287,7 +325,8 @@
       "btc to alts",
       "dxy to majors",
       "xau to aud"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Trade-flow microstructure (OFI/CVD from SPOT taker volume)",
@@ -303,6 +342,13 @@
       "trade-flow microstructure",
       "taker buy volume",
       "order flow imbalance spot"
+    ],
+    "decisive_tags": [
+      "ofi",
+      "cvd",
+      "order flow imbalance",
+      "trade-flow microstructure",
+      "cumulative volume delta"
     ]
   },
   {
@@ -318,6 +364,12 @@
       "maker free lunch",
       "maker rebate",
       "passive maker fill"
+    ],
+    "decisive_tags": [
+      "maker execution",
+      "maker free lunch",
+      "maker rebate",
+      "passive maker fill"
     ]
   },
   {
@@ -329,6 +381,11 @@
     "kill_metric": "0.7 bps gross vs ~30 bps cost, sign inverted",
     "revive_condition": "Cross-venue FUNDING DISPERSION + OI-acceleration at constant funding (multi-venue crowding) — NOT the simple term-spread.",
     "tags": [
+      "funding term structure",
+      "funding term-spread",
+      "funding term spread"
+    ],
+    "decisive_tags": [
       "funding term structure",
       "funding term-spread",
       "funding term spread"
@@ -348,7 +405,8 @@
       "liquidation flush",
       "forced liquidation reversion",
       "liquidation rebound"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Options-surface grid (VRP/TERM/VOV/RSKEW, 1024 configs)",
@@ -365,7 +423,8 @@
       "vol of vol",
       "realized skew",
       "1024 config"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Legacy dead crypto slate (breakout/pairs/intraday-tod)",
@@ -381,6 +440,11 @@
       "intraday_tod_btc",
       "dead slate",
       "legacy slate"
+    ],
+    "decisive_tags": [
+      "breakout_vol_expansion",
+      "pairs_eth_btc",
+      "intraday_tod_btc"
     ]
   },
   {
@@ -401,7 +465,8 @@
       "swap-free carry",
       "symbolic regression",
       "genetic programming"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S2.1 top-LSR contrarian positioning",
@@ -417,7 +482,8 @@
       "long-short ratio contrarian",
       "lsr contrarian",
       "positioning contrarian"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S2.2 liquidation-cascade reversion (real CoinGlass data)",
@@ -431,7 +497,8 @@
       "liquidation real data",
       "coinglass liquidation reversion",
       "liquidation cascade real"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S3 funding-squeeze on 1d / universe expansion",
@@ -447,7 +514,8 @@
       "funding squeeze 1d",
       "universe expansion funding",
       "1d universe"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S4.3 VRP-DVOL sizing gate",
@@ -462,7 +530,8 @@
       "vrp dvol sizing",
       "dvol sizing gate",
       "vrp sizing"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S5 gold-β-hedged metals relative-value book",
@@ -478,7 +547,8 @@
       "metals rv",
       "gold-silver-miners rv",
       "gold neutral spread"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S7 central-bank tone-drift (LLM hawk/dove)",
@@ -496,7 +566,8 @@
       "hawk/dove",
       "llm tone",
       "fed tone drift"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S8 regime conditioning of funding_squeeze (HMM/BOCPD)",
@@ -512,7 +583,8 @@
       "bocpd conditioning",
       "regime gate funding",
       "regime-aware cpcv"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S2.2A funding cross-sectional continuation (XS)",
@@ -530,7 +602,8 @@
       "xs funding",
       "funding cross sectional",
       "cross sectional funding"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S2.2D volatility-dispersion cross-sectional (XS)",
@@ -546,7 +619,8 @@
       "vol-dispersion",
       "dispersion cross-sectional",
       "vol dispersion xs"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S2.2B open-interest-growth cross-sectional (XS)",
@@ -563,7 +637,8 @@
       "open-interest growth cross-sectional",
       "open interest growth",
       "oi growth xs"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "S2.3 cross-venue funding dispersion",
@@ -579,7 +654,8 @@
       "cross venue dispersion",
       "cross venue funding",
       "cross-venue funding dispersion"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Global-LSR (all-accounts) contrarian positioning",
@@ -596,7 +672,8 @@
       "retail lsr contrarian",
       "global account long short ratio",
       "aggregate positioning contrarian"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Perp taker-flow imbalance extreme CONTINUATION (taker_perp_prereg)",
@@ -611,7 +688,8 @@
       "perp taker flow prereg",
       "coinglass taker volume perp",
       "aggressive flow continuation extreme z"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "Equity perps / tokenized-stock perps as a funding axis (SPX/TSLA/NVDA/COIN/MSTR)",
@@ -634,7 +712,8 @@
       "tsla nvda funding",
       "coin mstr proxy",
       "stock perps funding"
-    ]
+    ],
+    "decisive_tags": []
   },
   {
     "name": "FX London-session channel breakout (tier-2 survivor)",
@@ -655,6 +734,13 @@
       "channel breakout",
       "london open",
       "breakout london open"
+    ],
+    "decisive_tags": [
+      "channel breakout",
+      "fx channel breakout",
+      "london breakout",
+      "london session breakout",
+      "session breakout"
     ]
   },
   {
@@ -682,6 +768,7 @@
       "funding squeeze universe expansion",
       "wider universe for the funding squeeze",
       "more perps for the funding squeeze"
-    ]
+    ],
+    "decisive_tags": []
   }
 ]
