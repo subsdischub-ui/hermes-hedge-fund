@@ -38,9 +38,19 @@ import pytest
 
 from hermes.research import s10_governance as gov
 
-# Le livre live, verbatim de research_crypto2/_book.json (2026-07-16).
+# Le livre live, verbatim de research_crypto2/_book.json (2026-07-16). Ces constantes
+# sont figées ICI parce que research_*/ est gitignoré : le CI n'a PAS les artefacts de
+# recherche. Le gros des tests ci-dessous porte donc sur la MÉCANIQUE (qui, elle, est
+# versionnée) ; seul le test d'ancrage lit le fichier réel, et il skippe proprement là
+# où il n'existe pas — même motif que `lake` dans test_carry_harvest.py.
 BOOK_SHARPE = 0.07388835755253846
 BOOK_SR_VAR = 0.00222
+
+_BOOK_JSON = Path(__file__).resolve().parents[2] / "research_crypto2" / "_book.json"
+needs_book = pytest.mark.skipif(
+    not _BOOK_JSON.exists(),
+    reason="research_crypto2/_book.json est gitignoré (artefact de recherche local)",
+)
 
 
 def _returns_with_sharpe(sharpe: float, n: int = 461) -> list[float]:
@@ -50,9 +60,16 @@ def _returns_with_sharpe(sharpe: float, n: int = 461) -> list[float]:
     return (sharpe + x).tolist()
 
 
+@needs_book
 def test_the_committed_book_really_is_deflated_at_three_trials():
-    """Le fait de départ, lu sur le fichier réel — pas une allégation."""
-    book = json.loads(Path("research_crypto2/_book.json").read_text())
+    """Le fait de départ, lu sur le fichier réel — pas une allégation.
+
+    Skippe en CI (research_*/ gitignoré) : c'est le seul test du fichier qui dépende
+    d'un artefact non versionné, et il vérifie que les constantes figées ci-dessus
+    n'ont pas dérivé du réel. Chemin ABSOLU — un chemin relatif dépendait du cwd de
+    pytest, ce qui est précisément ce qui a fait rougir le CI (92fae3b).
+    """
+    book = json.loads(_BOOK_JSON.read_text())
     assert book["n_trials"] == 3
     assert book["book"]["sharpe"] == pytest.approx(BOOK_SHARPE)
 
