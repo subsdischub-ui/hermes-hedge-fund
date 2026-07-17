@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from hermes.learning.stats import deflated_sharpe_ratio
+from hermes.learning.stats import deflated_sharpe_ratio, expected_max_sharpe
 
 __all__ = [
     "CROSS_BAR",
@@ -62,14 +62,18 @@ __all__ = [
     "DataStatus",
     "DeadEnd",
     "DeadEndsLedger",
+    "DeflationResult",
     "ForwardOOSEvidence",
     "LedgerVerdict",
     "PromotionBar",
     "PromotionThresholds",
     "PromotionVerdict",
     "SleeveEvidence",
+    "TrialScope",
     "Verdict",
+    "assert_comparable",
     "bar_for_book",
+    "deflate",
     "deflated_sharpe_at_true_count",
     "funding_squeeze_status",
     "governance_registry_dir",
@@ -255,6 +259,101 @@ class PromotionThresholds:
 #       they are my head-of-research choice and are overridable here.
 #   (c) baseline a future reader may rely on as mandated = DSR>0, PBO<0.5, |ρ|<0.3, MC p<0.05 (floor).
 # See research_streams/S10/FINDINGS.md §7 (the decision flagged for Malachie).
+class TrialScope(StrEnum):
+    """DE QUELS essais un candidat est-il déflaté ? La convention doit être DÉCLARÉE.
+
+    Le DSR (Bailey & López de Prado) déflate par E[max] sur les essais **desquels le
+    candidat a été SÉLECTIONNÉ**. Deux conventions coexistaient dans ce repo sans jamais
+    être nommées — et elles étaient appliquées de façon ASYMÉTRIQUE (mesuré 2026-07-16) :
+    le livre live à ``n_trials: 3`` (research_crypto2/_book.json), les challengers au
+    compte du livre (#41 → 1911, #37 → 1909, #38 → 1910). Le titulaire ne passait que
+    grâce à sa règle privée : à N=10 il échoue déjà.
+    """
+
+    SELECTION_SET = "selection-set"  # la grille d'où le candidat a été tiré (déf. du DSR)
+    BOOK_WIDE = "book-wide"          # tous les essais jamais comptés au livre
+
+
+@dataclass(frozen=True)
+class DeflationResult:
+    """Un verdict de déflation qui DIT sa convention et s'il porte de l'information."""
+
+    dsr: float
+    sharpe: float
+    expected_max: float
+    n_trials: int
+    scope: TrialScope
+    saturated: bool
+    reason: str
+
+
+def deflate(
+    returns: Sequence[float],
+    sr_variance: float,
+    n_trials: int,
+    scope: TrialScope,
+) -> DeflationResult:
+    """DSR + le drapeau ``saturated`` : le nombre porte-t-il seulement de l'information ?
+
+    Quand ``E[max] >= Sharpe``, le DSR passe sous 0.5 **par construction** — sans aucune
+    hypothèse sur les moments. Il ne mesure alors plus la qualité du candidat, il mesure
+    la taille de N. Mesuré au compte du livre : #37 → 0.0000253, #38 → 0.000215,
+    #41 → 0.000272 — trois nombres quasi identiques, quasi nuls, qui ne discriminent rien
+    et qui ont pourtant été rapportés comme des mesures. À N de famille, le même
+    instrument sépare (#14 → 0.287, #31 → 0.483).
+
+    Ce drapeau ne choisit pas la convention : il empêche un DSR saturé de se faire passer
+    pour un verdict.
+    """
+    r = list(returns)
+    if len(r) < 2:
+        raise ValueError("deflate() exige au moins 2 observations")
+    mean = sum(r) / len(r)
+    var = sum((x - mean) ** 2 for x in r) / (len(r) - 1)
+    sharpe = mean / (var**0.5) if var > 0 else 0.0
+    e_max = expected_max_sharpe(sr_variance, n_trials)
+    dsr = deflated_sharpe_ratio(returns, sr_variance, n_trials)
+    saturated = e_max >= sharpe
+    if saturated:
+        reason = (
+            f"SATURÉ — E[max]={e_max:.4f} >= Sharpe={sharpe:.4f} à N={n_trials} "
+            f"({scope.value}) : le DSR est < 0.5 par construction et ne porte AUCUNE "
+            f"information sur ce candidat. Il mesure N, pas la stratégie."
+        )
+    else:
+        reason = (
+            f"informatif — Sharpe={sharpe:.4f} domine E[max]={e_max:.4f} à N={n_trials} "
+            f"({scope.value})."
+        )
+    return DeflationResult(
+        dsr=float(dsr), sharpe=float(sharpe), expected_max=float(e_max),
+        n_trials=int(n_trials), scope=scope, saturated=bool(saturated), reason=reason,
+    )
+
+
+def assert_comparable(a: DeflationResult, b: DeflationResult) -> None:
+    """Refuse de comparer deux candidats déflatés sous des conventions DIFFÉRENTES.
+
+    C'est le mécanisme qui rend l'asymétrie de 2026-07-16 impossible à re-créer en
+    silence : le livre live jugé sur sa grille de 3 sleeves pendant que les challengers
+    étaient jugés sur les 1911 essais du livre. Rien dans le code ne l'interdisait — c'est
+    ainsi que le verrou de statu quo a vécu. Une barre que le titulaire ne franchit qu'en
+    changeant de règle n'est pas un filtre de qualité.
+
+    Choisir la convention reste un acte humain (les deux se défendent : le sur-ensemble
+    du livre capture les degrés de liberté du chercheur ; l'ensemble de sélection est la
+    définition du DSR). Ce garde-fou exige seulement qu'elle soit LA MÊME des deux côtés.
+    """
+    if a.scope is not b.scope:
+        raise ValueError(
+            f"déflation non comparable : '{a.scope.value}' (N={a.n_trials}) vs "
+            f"'{b.scope.value}' (N={b.n_trials}). Juger un challenger au compte du livre "
+            f"pendant que le titulaire garde sa grille est un verrou de statu quo, pas un "
+            f"filtre. Déflate les DEUX sous la même convention — et si le titulaire n'y "
+            f"survit pas, c'est un résultat, pas un bug."
+        )
+
+
 CRYPTO_BAR = PromotionThresholds(max_pbo=0.50, min_dsr=0.95)
 FX_BAR = PromotionThresholds(max_pbo=0.40, min_dsr=0.975)
 CROSS_BAR = PromotionThresholds(max_pbo=0.40, min_dsr=0.975)
