@@ -1285,6 +1285,51 @@ DEFAULT_DEAD_ENDS: list[DeadEnd] = [
               "funding squeeze universe expansion", "wider universe for the funding squeeze",
               "more perps for the funding squeeze"),
     ),
+    DeadEnd(
+        "Illiquid-tail / balance-sheet carry (Boucle β) — vendre du bilan sur la queue ou en vault",
+        "crypto", "2026-07 (Boucle β, FINDINGS_BETA.md) ; mécanisé 2026-07-18",
+        "La thèse « le petit va où les fonds ne peuvent pas » : récolter le funding/basis "
+        "delta-neutre sur les perps ILLIQUIDES de la queue (là où le capital de bilan "
+        "institutionnel type Ethena ne se déploie pas), son steelman bi-directionnel "
+        "(reverse-carry : long perp / short spot pour encaisser la magnitude du funding "
+        "négatif de la queue), et sa variante passive (déposer dans un vault "
+        "contrepartie-des-traders type HLP comme position du MOTEUR).",
+        "RÉFUTÉ dans les trois directions, par mesure (research_streams/BETA, 3 red-teams "
+        "unanimes). (1) Le SIGNE tue la thèse : pente forward 2025+ funding~liquidité "
+        "= +0.047 (t=+2.72), POSITIVE — la récolte monte AVEC la liquidité, l'inverse "
+        "exact de la thèse ; queue Binance médiane −2.3 %, moyenne −10.8 % (33 % positifs) ; "
+        "exo Hyperliquid moyenne −10.7 %. La magnitude 2-3× de la queue est réelle mais "
+        "NÉGATIVE-signée = territoire reverse-carry. (2) Le reverse-carry est borrow-locké : "
+        "+15 % brut forward, mais le funding négatif EST le coût de borrow d'un token "
+        "hard-to-borrow (no-arb) ; au borrow honnête λ=1.0 → −1.9 %, 0 % des marchés "
+        "positifs — le lake ne voit pas le borrow, le chiffre brut est non-revendicable. "
+        "(3) Le vault-dépôt (HLP ~15-30 % APR) est un profil short-vol avec pertes "
+        "adversariales documentées (JELLY 2025-03-26 : −$12-13.5M latents, sauvés par un "
+        "delisting discrétionnaire) : c'est une DÉCISION D'ALLOCATION OPÉRATEUR, jamais "
+        "une position du moteur. La persistance du mécanisme joue CONTRE nous : plus le "
+        "bilan institutionnel croît, plus le plancher colle.",
+        "pente signée forward +0.047 t=+2.72 (récolte ∝ liquidité) ; queue méd −2.3 % / "
+        "moy −10.8 % ; reverse-carry −1.9 % à λ=1.0 (0 % marchés positifs) ; 3 red-teams "
+        "verdict_robust=true",
+        "Épisode de contango extrême type vrai bull (condition de réouverture β n°1), "
+        "constaté par le moniteur dormant à seuil PRÉ-ÉCRIT — jamais par re-backtest de la "
+        "même thèse. Les vaults restent des décisions d'allocation opérateur, hors moteur. "
+        "NB : ceci ne gouverne PAS funding_carry_harvest (S3) — sleeve SUSPENDU sur le "
+        "panier LIQUIDE validé, dont le réveil nommé (fill-rate maker réel au stage_1) "
+        "relève de sa suspension, pas de ce verdict.",
+        # Décisifs : qualificatifs illiquide/queue/vault/assurance — jamais les mots du
+        # domaine de S3 (« carry harvest », « cash-and-carry » nus) pour ne pas bloquer
+        # son réveil légitime. Sondés par test_ledger_blocks_illiquid_balance_sheet_carry
+        # + le pendant anti-faux-blocage S3/P1/P2.
+        tags=("illiquid carry", "tail carry", "niche carry", "vault deposit",
+              "reverse carry", "borrow premium", "short-vol vault",
+              "carry on alts", "funding tail", "illiquid basis"),
+        decisive_tags=("illiquid tail", "illiquid niche", "illiquid-tail",
+                       "small-cap perps", "tail perps", "hlp vault",
+                       "balance-sheet insurance", "balance sheet insurance",
+                       "where funds cannot go", "negative-funding tail",
+                       "counterparty of the traders", "insurance seller"),
+    ),
 ]
 
 

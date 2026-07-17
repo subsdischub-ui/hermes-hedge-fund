@@ -111,3 +111,61 @@ def test_decisive_tags_survive_the_json_round_trip(tmp_path):
     path.write_text(json.dumps([e.as_dict() for e in gov.DEFAULT_DEAD_ENDS]))
     reloaded = gov.DeadEndsLedger.load(path)
     assert reloaded.check("donchian breakout on 4h klines")["verdict"] is gov.LedgerVerdict.BLOCKED
+
+
+# --------------------------------------------------------------------------- #
+# Entrée #42 — Boucle β / vendeur de bilan (2026-07-18) : le 4e verdict orphelin
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "proposal",
+    [
+        # Les 5 formulations mesurées passantes AVANT l'entrée (trou vérifié 2x par
+        # exécution : par le panel adversarial du workflow, puis par l'orchestrateur).
+        "harvest delta-neutral funding carry on illiquid tail perps",
+        "long the illiquid niche basket to collect funding where funds cannot go",
+        "delta-neutral cash-and-carry basis on small-cap perps",
+        "deposit into HLP vault as counterparty of the traders",
+        "sell balance-sheet insurance via medium carry on alts",
+        # Reformulations naturelles supplémentaires.
+        "reverse carry: long perp short spot on negative-funding tail coins",
+        "the small player collects funding in the illiquid tail where funds cannot go",
+    ],
+)
+def test_ledger_blocks_illiquid_balance_sheet_carry(proposal):
+    """Le verdict Boucle β ne vivait qu'en prose (FINDINGS_BETA.md) — cas R3.
+
+    Chiffres du kill (vérifiés à la source avant d'écrire l'entrée) : pente forward
+    2025+ SIGNÉE +0.047 (t=+2.72) — la récolte monte AVEC la liquidité, l'inverse de
+    la thèse « le petit va où les fonds ne peuvent pas » ; queue Binance médiane
+    -2.3 %, moyenne -10.8 % ; reverse-carry +15 % brut = prime de borrow, -1.9 % au
+    borrow no-arb λ=1.0 (0 % des marchés positifs) ; 3 red-teams unanimes.
+    """
+    verdict = gov.DeadEndsLedger().check(proposal)
+    assert verdict["verdict"] is gov.LedgerVerdict.BLOCKED, (
+        f"FAUX PASS sur '{proposal}' — le verdict Boucle β doit bloquer"
+    )
+    assert "Illiquid-tail" in verdict["matched"]
+
+
+@pytest.mark.parametrize(
+    "proposal",
+    [
+        # S3 est SUSPENDU (pas mort) : son réveil nommé — fill-rate maker mesuré au
+        # stage_1 — ne doit JAMAIS être bloqué par l'entrée Boucle β. C'est le piège
+        # exact de cette entrée : S3 EST un cash-and-carry, mais sur le panier
+        # LIQUIDE validé, gouverné par sa suspension, pas par le ledger.
+        "wake funding_carry_harvest once the real maker fill-rate is measured at stage_1",
+        "réveil de funding_carry_harvest au fill-rate maker réel mesuré",
+        # P1/P2 (positions survivantes) et l'ancre restent libres.
+        "shadow-measure maker fill-rate on our own S2 and MR entries",
+        "funding squeeze continuation on the validated basket",
+        "cross-venue bybit funding as a new data axis",
+        # Le moniteur dormant de P4 lui-même est de l'infra, pas un pari.
+        "dormant monitor of annualized basis with a pre-written contango threshold",
+    ],
+)
+def test_beta_entry_does_not_block_s3_revival_nor_survivor_positions(proposal):
+    verdict = gov.DeadEndsLedger().check(proposal)
+    assert verdict["verdict"] is gov.LedgerVerdict.NOT_A_DEAD_END, (
+        f"FAUX BLOCAGE sur '{proposal}' -> {verdict['matched']}"
+    )
