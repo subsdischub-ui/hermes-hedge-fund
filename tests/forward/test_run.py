@@ -54,6 +54,21 @@ def test_runner_is_idempotent_same_day(tmp_path):
     assert len(back) == 1  # re-running the same UTC day overwrites, never duplicates
 
 
+def _stub_bybit_network(monkeypatch):
+    """Neutralise la SEULE couture réseau coûteuse des collecteurs par défaut.
+
+    Les 5 collecteurs historiques ne fetchent qu'un snapshot du jour (secondes) ;
+    `bybit_funding`, lui, fait un BACKFILL COMPLET ~6 ans x 11 symboles au premier
+    run sur un data_dir vierge — or ces tests CLI utilisent un tmp_path frais :
+    mesuré à 140 s PAR TEST (2026-07-18) avant ce stub, en frappant l'API réelle
+    depuis la suite. Le stub vide garde le collecteur EXERCÉ (enregistrement,
+    fail-soft, manifest) sans réseau ; le backfill réel de prod est intact.
+    """
+    from hermes.forward import collect_bybit_funding as cbf
+
+    monkeypatch.setattr(cbf, "fetch_funding_page", lambda *a, **k: [])
+
+
 def test_cli_main_keeps_trial_registry_decoupled_from_forward_data_dir(tmp_path, monkeypatch):
     """Regression guard: main() used to pass --data-dir straight through to the trial
     registry, so production's BookTrialRegistry silently forked onto an ad-hoc path
@@ -64,6 +79,7 @@ def test_cli_main_keeps_trial_registry_decoupled_from_forward_data_dir(tmp_path,
     forward_root = tmp_path / "forward_logs"
     registry_root = tmp_path / "registry"
     monkeypatch.setenv("HERMES_GOVERNANCE_DIR", str(registry_root))
+    _stub_bybit_network(monkeypatch)
     monkeypatch.setattr(
         sys, "argv", ["run.py", "--data-dir", str(forward_root)]
     )
@@ -94,6 +110,7 @@ def test_cli_main_manifest_includes_dead_ends_check(tmp_path, monkeypatch, capsy
     import json
 
     monkeypatch.setenv("HERMES_GOVERNANCE_DIR", str(tmp_path / "registry"))
+    _stub_bybit_network(monkeypatch)
     monkeypatch.setattr(sys, "argv", ["run.py", "--data-dir", str(tmp_path / "forward_logs")])
     run.main()
     printed = capsys.readouterr().out

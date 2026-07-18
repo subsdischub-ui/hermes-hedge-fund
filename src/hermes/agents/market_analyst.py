@@ -73,6 +73,30 @@ async def run(state: HermesState) -> HermesState:
         "regime": regime["regime"],
         "regime_efficiency_ratio": round(regime["efficiency_ratio"], 3),
     }
+    # P1 shadow measurement (research_maker/PREREG_SHADOW_FILL.md): resolve any
+    # maker-shadow entry left PENDING from the previous tick against the bar that
+    # just closed (this tick's newest bar IS the "next bar" for whatever was
+    # recorded at decision time last tick). Read-only on df, additive, never
+    # touches maker_orders or any live decision. Best-effort: a shadow-measurement
+    # bug must never abort the tick.
+    try:
+        from hermes.execution.shadow_maker import resolve_pending
+
+        resolve_pending(
+            state.symbol,
+            {
+                "open": float(df["open"].iloc[-1]),
+                "high": float(df["high"].iloc[-1]),
+                "low": float(df["low"].iloc[-1]),
+                "close": float(df["close"].iloc[-1]),
+            },
+            # Epoch-ms OPEN de la barre close la plus récente — l'ancre de la garde
+            # anti-écart : seule LA barre suivante peut résoudre une entrée en attente.
+            bar_ts=int(df["ts"].iloc[-1].timestamp() * 1000)
+            if hasattr(df["ts"].iloc[-1], "timestamp") else int(df["ts"].iloc[-1]),
+        )
+    except Exception as e:
+        log.warning("shadow_maker_resolve_failed", symbol=state.symbol, error=str(e))
     # Symbol-aware evaluation: BTC-only skills (e.g. intraday_tod_btc) are not run
     # for ETH/SOL, matching the backtest.
     sigs = [s.__dict__ for s in get_skill_library().evaluate_for_symbol(state.symbol, df)]

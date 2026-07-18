@@ -29,6 +29,7 @@ import time
 import pandas as pd
 
 from hermes.forward import (
+    collect_bybit_funding,
     collect_comex,
     collect_macro,
     collect_skew,
@@ -49,7 +50,7 @@ WIRE_XS_REVERSION = False
 
 
 def default_collector_names(*, wire_xs_reversion: bool = WIRE_XS_REVERSION) -> list[str]:
-    names = ["skew", "comex", "macro", "top_lsr", "funding_squeeze_shadow"]
+    names = ["skew", "comex", "macro", "top_lsr", "funding_squeeze_shadow", "bybit_funding"]
     if wire_xs_reversion:
         names.append("xs_reversion_shadow")
     return names
@@ -140,6 +141,26 @@ def _top_lsr_collector(now_ms):  # pragma: no cover - network seam (default fetc
     return c
 
 
+def _bybit_funding_collector(now_ms, data_dir):  # pragma: no cover - network seam (hits Bybit)
+    """Infra collector (P2 prep, hors-essai — see ledger #41's revive_condition):
+    Bybit 8h funding history, per symbol. Unlike the other flux, this collector
+    writes its own idempotent per-symbol CSVs directly (``<data_dir>/bybit_funding/
+    <SYMBOL>.csv``) instead of going through ``logio``'s day-level dedup, which
+    would collapse 3 daily 8h settlements down to 1 — see collect_bybit_funding's
+    module docstring. Reports ``rows_written``/``blockers`` itself; ``"logs": []``
+    since there is nothing left for the runner to write via logio."""
+    def c():
+        res = collect_bybit_funding.collect(data_dir=data_dir)
+        return {
+            "logs": [],
+            "blockers": res.get("blockers", {}),
+            "rows_written": sum(res.get("written", {}).values()),
+        }
+
+    c.flux_name = "bybit_funding"
+    return c
+
+
 def _funding_squeeze_collector(now_ms):
     def c():
         frames = fetch_live_frames()
@@ -185,7 +206,7 @@ def _raise_unwired(what):  # pragma: no cover
     return _f
 
 
-def _default_collectors(now_ms, *, wire_xs_reversion: bool):
+def _default_collectors(now_ms, *, data_dir=None, wire_xs_reversion: bool):
     built = {
         "skew": _skew_collector(now_ms),
         "comex": _comex_collector(now_ms),
@@ -193,6 +214,7 @@ def _default_collectors(now_ms, *, wire_xs_reversion: bool):
         "top_lsr": _top_lsr_collector(now_ms),
         "funding_squeeze_shadow": _funding_squeeze_collector(now_ms),
         "xs_reversion_shadow": _xs_reversion_collector(now_ms),
+        "bybit_funding": _bybit_funding_collector(now_ms, data_dir),
     }
     return [built[n] for n in default_collector_names(wire_xs_reversion=wire_xs_reversion)]
 
@@ -208,7 +230,7 @@ def run_forward(
     if now_ms is None:
         now_ms = int(time.time() * 1000)
     if collectors is None:
-        collectors = _default_collectors(now_ms, wire_xs_reversion=wire_xs_reversion)
+        collectors = _default_collectors(now_ms, data_dir=data_dir, wire_xs_reversion=wire_xs_reversion)
     manifest = {"now_ms": now_ms, "flux": {}}
     for coll in collectors:
         name = getattr(coll, "flux_name", getattr(coll, "__name__", "unknown"))
@@ -221,6 +243,9 @@ def run_forward(
                         log_name, df, key_cols=key_cols, ts_col=ts_col, data_dir=data_dir
                     )
                     written += len(df)
+            # A collector that persists outside logio (e.g. bybit_funding's own
+            # per-symbol CSVs) reports its own count here instead of via "logs".
+            written = res.get("rows_written", written)
             blockers = res.get("blockers", {})
             manifest["flux"][name] = {
                 "status": "ok" if not blockers else "partial",

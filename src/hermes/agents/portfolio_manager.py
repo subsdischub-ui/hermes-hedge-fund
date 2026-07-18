@@ -97,6 +97,29 @@ async def run(state: HermesState) -> HermesState:
         log.exception("pm_place_order_failed", symbol=order.symbol)
         return state
 
+    # P1 shadow measurement (research_maker/PREREG_SHADOW_FILL.md): log a
+    # hypothetical maker order at this same decision moment — pure shadow
+    # accounting, never affects the real/paper fill above. Best-effort: a
+    # shadow-measurement bug must never break a real entry.
+    try:
+        from hermes.execution.shadow_maker import record_entry
+
+        _dec_ts = state.ohlcv["ts"].iloc[-1] if state.ohlcv is not None else None
+        record_entry(
+            ts=fill.ts,
+            symbol=fill.symbol,
+            side=order.side,
+            skill_id=order.extra.get("skill_id", ""),
+            decision_close=float(state.snapshot.get("price", fill.price)),
+            # OPEN epoch-ms de la barre de décision (la dernière close) — ancre de la
+            # garde anti-écart : seule LA barre suivante pourra résoudre cette entrée.
+            decision_bar_ts=int(_dec_ts.timestamp() * 1000)
+            if _dec_ts is not None and hasattr(_dec_ts, "timestamp")
+            else (int(_dec_ts) if _dec_ts is not None else None),
+        )
+    except Exception as e:
+        log.warning("shadow_maker_record_failed", symbol=fill.symbol, error=str(e))
+
     journal = TradeJournal()
     s = get_settings()
     trade_id = await journal.open(

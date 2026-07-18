@@ -57,3 +57,22 @@ Sources internes : `research_maker/results.json` (sélection adverse à-la-touch
 18 gros winners ratés / 2 417 signaux) ; `data/intraday/_results.json` (le régime maker est
 DÉJÀ simulé et négatif pour toute cadence < 4h — ce prereg ne rouvre pas #15) ;
 `config/default.yaml` (fees, `maker_orders: false` et sa justification).
+
+---
+
+## Amendement n°1 — 2026-07-18, AVANT tout déploiement (zéro mesure existante)
+
+**Garde anti-écart, ajoutée à l'audit d'implémentation.** La règle gelée définit le fill sur
+« la barre 4h SUIVANTE ». Si un tick est manqué (redéploiement, panne — quatre redéploiements
+le 2026-07-16 le prouvent), la barre disponible à la reprise est PLUS TARDIVE : lui donner plus
+de temps pour traverser la limite gonflerait le fill-rate — le sens d'auto-flatterie exact que
+ce prereg interdit. Décision :
+- une entrée dont la barre immédiatement suivante n'a PAS été observée est **VOID** : sa mesure
+  n'est pas définie par la règle gelée. Ce n'est pas une « exclusion post-hoc » (aucun outcome
+  n'existe à exclure — la clause « aucun signal exclu » visait le tri sur résultat) ;
+- les VOID sont **comptés et publiés** (`n_void` au dashboard) — jamais silencieux ;
+- le verdict porte sur les **40 premiers signaux RÉSOLUS VALIDES**, dans l'ordre d'entrée.
+
+Mécanisme : `decision_bar_ts` ancré à l'enregistrement ; seule la barre à +4 h (±10 min de
+tolérance) peut résoudre ; plus tardive → VOID ; plus ancienne ou identique → reste en attente.
+Prouvé par mutation (garde désactivée → un écart de 2 barres compte un fill).

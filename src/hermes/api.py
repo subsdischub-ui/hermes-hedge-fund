@@ -231,6 +231,7 @@ async def dashboard_data() -> dict[str, Any]:
         "restructuration": _restructuration_status(s, edge_count),
         "trm_status": _trm_status_safe(),
         "trm_training": _trm_training_safe(stats.get("count", 0)),
+        "maker_shadow": _maker_shadow_safe(),
         "protections": await _protections_status(s, equity),
         "server_time": datetime.now(UTC).isoformat(),
     }
@@ -312,6 +313,20 @@ def _trm_training_safe(closed_trades: int) -> dict:
     except Exception as e:  # pragma: no cover - defensive
         return {"due": False, "closed_trades": int(closed_trades), "threshold": 100,
                 "note": f"statut indisponible: {e}"}
+
+
+def _maker_shadow_safe() -> dict:
+    """Fail-soft wrapper around shadow_maker.summary() — the P1 shadow measurement
+    of our own live entries' hypothetical maker fill-rate (position P1, gelée dans
+    research_maker/PREREG_SHADOW_FILL.md). A helper bug must never break telemetry;
+    ``maker_orders`` stays false regardless of what this reports (a PASS only
+    authorizes proposing the flip to the operator, it never flips it)."""
+    try:
+        from hermes.execution.shadow_maker import summary as maker_shadow_summary
+
+        return maker_shadow_summary()
+    except Exception as e:  # pragma: no cover - defensive
+        return {"error": f"{e}", "prereg": "research_maker/PREREG_SHADOW_FILL.md"}
 
 
 def _trm_status_safe() -> str:
@@ -819,6 +834,19 @@ def _restructuration_chat_block(s, edge_count: int, closed_count: int = 0) -> st
             f"ordre opérateur 2026-07-11 « entraîner dès 100 trades » — câblé, pas promis : "
             f"le statut se calcule à chaque requête et bascule seul au seuil)."
             if (tt := _trm_training_safe(closed_count)) else ""
+        )
+        + (
+            f"\n  - Mesure shadow fill-rate maker (P1, {ms.get('prereg')}) : "
+            f"{ms.get('n_resolved', 0)} signaux résolus"
+            + (
+                f", fill_strict(0)={round(ms['fill_strict_0'], 2)}, "
+                f"gain_net_est={round(ms['gain_net_bps_est'], 2)}bps"
+                if ms.get("fill_strict_0") is not None else " (pas encore de signal résolu)"
+            )
+            + f" — verdict à 40 : {ms.get('verdict_at_40') or 'en attente'} "
+            f"(PASS n'autorise QUE la proposition du flip à l'opérateur, jamais un flip auto ; "
+            f"maker_orders reste false)."
+            if (ms := _maker_shadow_safe()) else ""
         )
     )
 
