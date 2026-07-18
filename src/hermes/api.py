@@ -836,7 +836,10 @@ def _restructuration_chat_block(s, edge_count: int, closed_count: int = 0) -> st
             if (tt := _trm_training_safe(closed_count)) else ""
         )
         + (
-            f"\n  - Mesure shadow fill-rate maker (P1, {ms.get('prereg')}) : "
+            f"\n  - Mesure shadow fill-rate maker (P1, {ms.get('prereg')}) — observe "
+            f"chaque ENTRÉE LIVE du slate (mean_reversion_regime + funding_squeeze_"
+            f"continuation), PAS les signaux de S3 (suspendue ; son réveil est une "
+            f"CONSÉQUENCE d'un PASS, pas le flux observé) : "
             f"{ms.get('n_resolved', 0)} signaux résolus"
             + (
                 f", fill_strict(0)={round(ms['fill_strict_0'], 2)}, "
