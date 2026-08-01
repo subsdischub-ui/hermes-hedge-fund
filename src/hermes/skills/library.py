@@ -195,6 +195,18 @@ def _build_registry() -> dict[str, Skill]:
             id="funding_squeeze_continuation",
             description="Strategy #2 — the book's ONE real edge (basket joint-null p=0.0005 post-gatefix 2026-07-02): extreme-positive perp funding (z>=2 over 180 bars) marks leveraged-demand continuation; LONG, ~24-bar hold. Honest magnitudes per the 2026-06-25 re-audit: per-trade Sharpe ~0.3, OOS-40 ~0.3; weekly book rho to momentum was 0.35 (the old daily ~0.04 understated regime crowding). Needs a funding_rate column (attached live from Binance USDT-M).",
             fn=funding_squeeze_continuation,
+            # FIDÉLITÉ (2026-08-01) : le joint-null p=0.0005 — l'unique preuve statistique du
+            # livre — porte sur TROIS actifs (audit_s2_funding_squeeze.py:45 ASSETS =
+            # ["BTC","ETH","SOL"] ; _s2_funding_squeeze.json n'a que ces per_asset). Sans
+            # `symbols=`, le skill tournait sur les 7 perps de l'univers live : 4 d'entre eux
+            # (AVAX/SUI/ARB/WIF) recevaient un signal jamais validé pour eux. Mesuré sur données
+            # réelles (règle gelée, horizon 24 barres, 15 bps RT, 2026-02→2026-08) : univers
+            # validé -82.1 bps/évt (n=13) contre -739.6 bps/évt (n=9) hors validation, ~9x pire.
+            # Le mécanisme de restriction existait déjà et servait à 3 autres skills — il avait
+            # simplement été oublié sur le seul edge validé. Ne PAS élargir cette liste sans
+            # étendre d'abord le fichier de validation (test_s2_validated_universe.py le cloue),
+            # et se souvenir que le ledger #41 a clos la piste d'élargissement d'univers.
+            symbols=("BTC", "ETH", "SOL"),
         ),
         "funding_carry_harvest": Skill(
             id="funding_carry_harvest",

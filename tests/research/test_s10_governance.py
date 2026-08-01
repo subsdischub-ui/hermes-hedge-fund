@@ -350,7 +350,7 @@ def test_crypto_embedded_seed_is_1891_after_s2(tmp_path):
     assert reg.count(gov.Book.CROSS) == 5
 
 
-def test_committed_canonical_count_is_1911():
+def test_committed_canonical_count_is_1912():
     """The MIGRATED, committed governance/trials_by_book.json pins the canonical crypto count:
     1869 seed + 22 S2 v-next + 1 forward XS-reversion pre-reg (= 1892 after round-2 merge)
     + 8 Boucle-alpha cash-and-carry / cross-venue pre-registered grid (= 1900)
@@ -360,9 +360,11 @@ def test_committed_canonical_count_is_1911():
     + 1 global_lsr_prereg (retail-aggregate LSR contrarian, MORT — ledger #37) = 1909
     + 1 taker_perp_prereg (perp taker-flow continuation, MORT — ledger #38; lake 100% adjugé) = 1910
     + 1 s2_breadth_hardened_prereg (test durci largeur, univers point-in-time AVEC délistés,
-      PREREG_HARDENED 2026-07-16 — l'unique suite autorisée, sinon clôture) = 1911."""
+      PREREG_HARDENED 2026-07-16 — l'unique suite autorisée, sinon clôture) = 1911
+    + 1 mr_validation_prereg (mean_reversion_regime face à la barre de S2 — 89% du flux du
+      livre live et JAMAIS testé statistiquement ; PREREG 2026-08-01) = 1912."""
     reg = gov.BookTrialRegistry()  # reads the committed governance/ JSON
-    assert reg.count(gov.Book.CRYPTO) == 1911
+    assert reg.count(gov.Book.CRYPTO) == 1912
 
 
 def test_governance_snapshots_are_synced_with_embedded_defaults():
