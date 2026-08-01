@@ -97,6 +97,38 @@ Son statut vivant est un **héritage**, pas une preuve. Test pré-enregistré et
 (1911 → 1912, commit `f5452e4`) : `research_crypto2/PREREG_MR_VALIDATION.md`, barre identique à
 celle de S2, zéro adoucissement.
 
+### VERDICT : **FAIL** — et il n'est pas marginal
+
+Exécuté sur **8,96 ans** et **1 499 trades poolés** (7 actifs), barrières réelles du live,
+coût 15 bps RT. Lu à la lettre du prereg :
+
+| critère pré-enregistré | seuil | mesuré | verdict |
+|---|---|---|---|
+| `mc_p_max_5seeds` | < 0,05 | **0,4343** | ✗ (8,7× au-dessus) |
+| `oos_sharpe_40` | > 0 | **−0,0299** | ✗ |
+| joint-null panier `p_max5` | < 0,05 | **0,4345** | ✗ |
+| `edge_above_tide_bps` | > 0 | +2,38 bps | ✓ (seul passé) |
+
+**Une entrée au hasard — même mix long/short, mêmes barrières, même coût — bat le signal dans
+43 % des simulations.** Le seul critère passé se lit honnêtement : MR perd *un peu moins* que la
+marée moyenne, laquelle est elle-même négative après frais. « Moins mauvais que le hasard » n'est
+pas un edge.
+
+Net poolé : **−11,14 bps/trade** sur 1 499 trades. SOL seul est positif (mc_p 0,033) — le retenir
+serait exactement le retrait post-hoc de symboles que le prereg interdit.
+
+**Vérifié adversarialement** : ré-exécution indépendante avec la fonction canonique
+`hermes.validation.triple_barrier` du repo → **chiffre pour chiffre identique** (n=1499,
+net −11,1441 bps, sharpe −0,020302, oos −0,029912). Aucun symbole exclu en silence.
+
+**Conséquence, pré-écrite avant le résultat** : MR sort du slate exécutable (proposition à
+l'opérateur, jamais un retrait automatique), le livre devient **S2-seul sur BTC/ETH/SOL**, et la
+porte des 40 trades passe de ~1,5 mois à **~2,4 ans**.
+
+> **Ce que ça explique** : le Sharpe de 0,0739 du livre n'est pas « un edge faible ». C'est
+> l'edge réel de S2 **dilué par 89 % de bruit**. Les −31,87 bps/trade du mois forward sont
+> principalement du bruit MR, pas la faillite de S2.
+
 ---
 
 ## 5. Le fait structurel qui gouverne tout : la statistique n'existe pas
