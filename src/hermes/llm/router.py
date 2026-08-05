@@ -61,9 +61,23 @@ class LLMTarget:
 
 # DeepSeek V4 (OpenAI-compatible). Verified IDs (api-docs.deepseek.com): the
 # legacy deepseek-chat/reasoner are deprecated 2026-07-24 in favour of these.
+# No provider prefix, no "-latest" suffix on the DIRECT DeepSeek API (that
+# "deepseek/deepseek-v4-flash-latest" form is OpenRouter's slug convention for
+# THEIR catalogue page, not a parameter this API — base_url api.deepseek.com —
+# accepts; re-verified 2026-08-01. "deepseek-v4-flash" bare already always means
+# the current/latest Flash build on DeepSeek's own API).
+# PRIMARY switched pro -> flash (décision opérateur 2026-08-01, coût observé
+# ~$0,24/j) : bull/bear/trader/risk_manager/portfolio_manager/reflector*
+# passent sur Flash. Le chemin de trading réel n'en dépend pas — selective_mode
+# écrase la proposition LLM par la règle déterministe dès qu'un signal validé
+# arme ; l'effet réel porte sur la qualité de la thèse bull/bear, du chat, et
+# des réflexions nocturnes/hebdo qui nourrissent le LessonsStore.
+# ESCALATION reste sur pro, délibérément : filet de sécurité pour les cas rares
+# à fort enjeu (meta_optimizer), non demandé au changement — à confirmer si
+# l'opérateur veut aussi le basculer.
 DEEPSEEK = {
     "base_url": "https://api.deepseek.com",
-    "primary": "deepseek-v4-pro",
+    "primary": "deepseek-v4-flash",
     "secondary": "deepseek-v4-flash",
     "escalation": "deepseek-v4-pro",
 }

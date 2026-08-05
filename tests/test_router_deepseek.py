@@ -32,8 +32,12 @@ def test_key_activates_deepseek_primary_secondary_with_local_fallback():
     active, fallback, on = resolve_targets(loc, "sk-deepseek-123", DEEPSEEK)
     assert on is True
     assert active["primary"].base_url == "https://api.deepseek.com"
-    assert active["primary"].model == "deepseek-v4-pro"
+    # Cerveau principal basculé sur Flash (décision opérateur 2026-08-01, coût) —
+    # secondary reste flash aussi (déjà le cas), escalation reste pro (filet de
+    # sécurité pour les cas rares à fort enjeu, non demandé au changement).
+    assert active["primary"].model == "deepseek-v4-flash"
     assert active["secondary"].model == "deepseek-v4-flash"
+    assert active["escalation"].model == "deepseek-v4-pro"
     assert active["primary"].api_key == "sk-deepseek-123"
     # Local llama.cpp preserved as fallback for primary/secondary.
     assert fallback["primary"].model == "qwen-local"
