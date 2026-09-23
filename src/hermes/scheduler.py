@@ -49,14 +49,20 @@ def build_scheduler() -> AsyncIOScheduler:
                 state = await orch.tick(sym, timeframe=decision_tf)
                 rd = state.risk_decision or {}
                 prop = state.trader_proposal or {}
+                # A returned graph can have aborted before risk evaluation. Do
+                # not publish that as an ordinary decision with null fields.
+                # Raw exception strings stay out of the public activity feed.
+                incomplete = not rd.get("decision") and not state.executed
                 activity.record(
                     {
-                        "kind": "decision",
+                        "kind": "error" if incomplete else "decision",
                         "symbol": sym,
                         "executed": bool(state.executed),
                         "side": prop.get("side", "?"),
-                        "decision": rd.get("decision"),
-                        "reason": rd.get("reason") or (state.selective_gate or {}).get("reason"),
+                        "decision": ("ABORTED" if state.error else "INCOMPLETE")
+                        if incomplete else rd.get("decision"),
+                        "reason": "Évaluation interrompue avant décision — consulter les journaux serveur"
+                        if incomplete else rd.get("reason") or (state.selective_gate or {}).get("reason"),
                         "skill": prop.get("skill_id", ""),
                         "regime": (state.regime or {}).get("regime"),
                         "selective_gate": state.selective_gate or {},
@@ -64,7 +70,11 @@ def build_scheduler() -> AsyncIOScheduler:
                 )
             except Exception as e:
                 log.exception("market_tick_failed", symbol=sym, error=str(e))
-                activity.record({"kind": "error", "symbol": sym, "error": str(e)})
+                activity.record({
+                    "kind": "error", "symbol": sym, "executed": False,
+                    "decision": "ERROR",
+                    "reason": "Échec du tick — consulter les journaux serveur",
+                })
 
     async def status_heartbeat() -> None:
         """Periodic one-line health/PnL summary so the agent's rhythm is visible
