@@ -132,7 +132,7 @@ async def require_api_key(key: str | None = Security(_api_key_header)) -> None:
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
-    return {"status": "ok"}
+    return {"status": "ok", "diagnostics_version": "tick-status-v1"}
 
 
 @app.get("/status", dependencies=[Depends(require_api_key)])
@@ -735,6 +735,15 @@ async def _chat_context() -> str:
     ]
     if len(closed) > _TRADE_DETAIL_CAP:
         trade_lines.append(f"  - ... et {len(closed) - _TRADE_DETAIL_CAP} trade(s) clos plus anciens (non listés ici, voir les stats agrégées ci-dessus pour le total).")
+    # Include recent evaluation status, not just pulse gauges. A failed tick
+    # must not be explained to the operator as a deliberate no-signal HOLD.
+    tick_lines = [
+        f"  - {a.get('ts')} {a.get('symbol')}: "
+        f"{a.get('decision') or 'NON RENSEIGNÉ'} "
+        f"(exécuté: {'oui' if a.get('executed') is True else 'non' if a.get('executed') is False else 'inconnu'}) "
+        f"— {a.get('reason') or 'motif absent'}"
+        for a in _recent_activity(s) if a.get("kind") in {"decision", "error"}
+    ][:7]
     return (
         f"ÉTAT LIVE DE NOTRE ENTREPRISE ({s.stage}):\n"
         f"- Capital paper: ${equity:.2f} (bankroll ${s.bankroll_usd}); univers {', '.join(s.universe)}\n"
@@ -744,6 +753,8 @@ async def _chat_context() -> str:
         f"{chr(10).join(trade_lines) or '  (aucun trade clos pour le moment)'}\n"
         f"- Stratégies:\n{strat}\n"
         f"- Positions ouvertes: {pos}\n"
+        f"- Dernières évaluations (une erreur ou un statut absent ne prouve PAS un HOLD):\n"
+        f"{chr(10).join(tick_lines) or '  (aucune évaluation disponible)'}\n"
         f"- Ce que chaque sleeve voit maintenant:\n{chr(10).join(gauges) or '  (pas de pulse récent)'}\n"
         f"{_restructuration_chat_block(s, edge_count, stats.get('count', 0))}"
     )
