@@ -6,7 +6,7 @@ the selective gate's verdict per symbol; no orders are placed here.
 
 from __future__ import annotations
 
-from hermes.data import get_market
+from hermes.data import MarketData
 from hermes.data.regime import detect_regime
 from hermes.execution import get_exchange
 from hermes.logging_setup import get_logger
@@ -130,32 +130,35 @@ async def pulse() -> int:
     cfg = load_selective_config(s)
     lib = get_skill_library()
     activity = ActivityLog(s.data_dir / "activity.json")
-    md = get_market()
+    # Own this adapter: get_market() is cached and borrowed by the trading graph.
+    # Closing that shared instance here aborts subsequent ticks on modern CCXT.
+    md = MarketData(s.exchange_primary)
     try:
-        open_keys = {(p.symbol, p.skill_id) for p in await get_exchange().open_positions()}
-    except Exception:
-        open_keys = set()
-    n = 0
-    for sym in s.universe:
         try:
-            df = await md.ohlcv(sym, timeframe=tf, limit=300)
-            # Attach funding so the funding_squeeze_continuation sleeve is visible in
-            # the pulse (matches what the live decision tick sees).
+            open_keys = {(p.symbol, p.skill_id) for p in await get_exchange().open_positions()}
+        except Exception:
+            open_keys = set()
+        n = 0
+        for sym in s.universe:
             try:
-                from hermes.research.funding import attach_funding
+                df = await md.ohlcv(sym, timeframe=tf, limit=300)
+                # Same funding source as the live decision tick.
+                try:
+                    from hermes.research.funding import attach_funding
 
-                fdf = await md.funding_history(sym)
-                if not fdf.empty:
-                    df = attach_funding(df, fdf)
+                    fdf = await md.funding_history(sym)
+                    if not fdf.empty:
+                        df = attach_funding(df, fdf)
+                except Exception as e:
+                    log.warning("pulse_funding_attach_failed", symbol=sym, error=str(e))
+                regime = detect_regime(df)
+                sigs = lib.evaluate_for_symbol(sym, df)
+                activity.record(pulse_entry(sym, regime, sigs, open_keys, cfg))
+                n += 1
             except Exception as e:
-                log.warning("pulse_funding_attach_failed", symbol=sym, error=str(e))
-            regime = detect_regime(df)
-            sigs = lib.evaluate_for_symbol(sym, df)
-            activity.record(pulse_entry(sym, regime, sigs, open_keys, cfg))
-            n += 1
-        except Exception as e:
-            log.warning("pulse_failed", symbol=sym, error=str(e))
-    await md.close()
+                log.warning("pulse_failed", symbol=sym, error=str(e))
+    finally:
+        await md.close()
     if n:
         log.info("pulse", symbols=n)
     return n
