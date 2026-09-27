@@ -340,6 +340,9 @@ class PaperExchange(Exchange):
                     )
                     if abs(new_qty) < 1e-12:
                         positions.pop(key, None)
+                    elif old_qty * new_qty > 0:
+                        # Partial reduction: retain the original basis and protection.
+                        pos["qty"] = new_qty
                     else:
                         # Residual flips to the opposite side. New basis = current px,
                         # stops reset (we will NOT keep the old stop on a flipped side).
@@ -350,10 +353,11 @@ class PaperExchange(Exchange):
                         pos["opened_at"] = datetime.now(UTC).isoformat()
                         # Account for the flipped half's open-leg cash flow.
                         flipped_notional = abs(new_qty) * px
+                        residual_fee = fee * (1 - closed_qty / order.qty)
                         if new_qty > 0:
-                            self._state["cash_usd"] -= flipped_notional
+                            self._state["cash_usd"] -= flipped_notional + residual_fee
                         else:
-                            self._state["cash_usd"] += flipped_notional
+                            self._state["cash_usd"] += flipped_notional - residual_fee
 
             fill = Fill(
                 order_id=order.client_id or f"paper-{uuid4().hex[:8]}",
